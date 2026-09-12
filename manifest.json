@@ -1,0 +1,33 @@
+{
+  "name": "github-web-skill",
+  "version": "1.1.2",
+  "updated": "2026-09-11",
+  "layers": [
+    { "id": "main", "path": "SKILL.md", "role": "主入口（原则 / 通道一览 / 场景路由 / CLI）" },
+    { "id": "routes", "path": "routes/", "role": "总路由（routes.json 事实源 → ROUTES.md 渲染）" },
+    { "id": "scripts", "path": "scripts/", "role": "CLI 与原子通道（direct/pin/hosts/mirror/cdn）+ 治理层" },
+    { "id": "tests", "path": "tests/", "role": "单测与真机只读冒烟" }
+  ],
+  "network": {
+    "allow_domains": [
+      "github.com", "api.github.com", "codeload.github.com", "raw.githubusercontent.com",
+      "gist.githubusercontent.com", "objects.githubusercontent.com", "avatars.githubusercontent.com",
+      "release-assets.githubusercontent.com", "github-releases.githubusercontent.com",
+      "cdn.jsdelivr.net", "fastly.jsdelivr.net", "gcore.jsdelivr.net", "jsdelivr.b-cdn.net",
+      "testingcf.jsdelivr.net", "cdn.statically.io", "raw.githack.com", "raw.gitmirror.com", "gitcdn.link",
+      "gh-proxy.com", "ghfast.top", "gh.xxooo.cf", "gh-proxy.org", "ghproxy.net",
+      "ghproxy.homeboyc.cn", "github.akams.cn", "hub.gitmirror.com", "github.moeyy.xyz", "ghp.ci",
+      "gh-proxy.net", "xget.xi-xu.me", "ghps.cc", "ghproxy.cc", "hub.fastgit.org",
+      "github.com.cnpmjs.org", "gitclone.com", "kkgithub.com", "bgithub.xyz",
+      "223.5.5.5", "1.12.12.12",
+      "1317825751-jonkwhxmyb.ap-guangzhou.tencentscf.com"
+    ],
+    "note": "如实声明：本 Skill 会出网（官方端点 / CDN / 镜像池 / 用户自建云函数 / DoH）。镜像池与 CDN 为第三方，报告会标注 third_party。`get --url` 接受调用方给出的任意 https 地址（Release 资产 / codeload 等），此时访问域由调用方决定。"
+  },
+  "shell": { "used": true, "commands": ["git", "curl"], "note": "拉起 git 与 curl 子进程；均清空代理环境变量后执行。" },
+  "writes": {
+    "user_area": "~/.github-access/（日志 / 缓存 / hosts 备份；GH_ACCESS_HOME 可覆盖）",
+    "system": "仅 hosts 通道，需显式 --yes 且可回滚",
+    "package": "零写入（包内不产生任何运行态）"
+  }
+}
