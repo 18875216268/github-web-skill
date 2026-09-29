@@ -98,6 +98,10 @@ def main() -> int:
           all(fm(k) for k in ("version", "display_name", "display_name_en",
                               "description_zh", "description_en")),
           {k: fm(k) for k in ("version", "display_name", "display_name_en")})
+    check("A6c 展示分工：description_zh/en 为人类向简介（≠description 路由长文，长度适中）",
+          fm("description_zh") != desc and 20 < len(fm("description_zh") or "") <= 160
+          and fm("description_en") != desc and 20 < len(fm("description_en") or "") <= 300,
+          {"zh": len(fm("description_zh") or ""), "en": len(fm("description_en") or "")})
     check("A7 SKILL.md 正文 < 500 行（渐进披露）", len(SKILL.splitlines()) < 500, len(SKILL.splitlines()))
     lic = PKG / "LICENSE"
     check("A9 发布件齐全：LICENSE 文件存在且为 MIT（与 frontmatter 声明一致）",

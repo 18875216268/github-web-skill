@@ -1,11 +1,11 @@
 ---
 name: github-web-skill
-version: "2.2.0"
+version: "2.2.1"
 display_name: "访问GitHub网络"
 display_name_en: "GitHub Access Layer"
 description: "访问GitHub网络（GitHub 访问层，分场景通道路由）：访问 GitHub 失败时自动逐级降级并如实报告——直连 → 钉 IP → hosts 兜底 → 第三方镜像 → CDN 单文件。当出现 git clone / pull / push 失败、raw 或 Release 下载不动、github.com 打不开、需要「配置 GitHub 加速」、或需要按场景稳定取 GitHub 仓库与文件时使用。也适用于「公司网络访问不了 GitHub」「DNS 污染」「代理环境变量导致命令失败」这类现场。"
-description_zh: "访问GitHub网络（GitHub 访问层，分场景通道路由）：访问 GitHub 失败时自动逐级降级并如实报告——直连 → 钉 IP → hosts 兜底 → 第三方镜像 → CDN 单文件。当出现 git clone / pull / push 失败、raw 或 Release 下载不动、github.com 打不开、需要「配置 GitHub 加速」、或需要按场景稳定取 GitHub 仓库与文件时使用。也适用于「公司网络访问不了 GitHub」「DNS 污染」「代理环境变量导致命令失败」这类现场。"
-description_en: "GitHub access layer with scenario-based channel routing: automatic failover with honest reporting (direct → pinned-IP → hosts → third-party mirror → CDN). Use when git clone/pull/push fails, raw or Release downloads stall, github.com is unreachable, DNS is poisoned, or proxy env vars break commands."
+description_zh: "网络受限时稳定使用 GitHub 的工具箱：克隆与拉取仓库、下载文件和 Release、修复浏览器打不开 GitHub。自动选最快通道，失败自动换路，hosts 改动可随时回滚。"
+description_en: "A toolbox for using GitHub reliably on restricted networks: clone and pull repos, download files and releases, and fix a browser that cannot open github.com. Fastest channel auto-selected, automatic failover, hosts changes always reversible."
 license: "MIT"
 compatibility: "需要 Python 3.10+（仅标准库）与系统 git/curl；需要出网（GitHub 官方端点、媒体 CDN、第三方镜像池、公共 DoH、外部 hosts 清单源与官方段闸——全部登记于资源层 sources.json）；hosts 通道需管理员权限。"
 metadata:
