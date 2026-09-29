@@ -1,0 +1,7 @@
+{
+  "name": "nite07",
+  "url": "https://g.nite07.org",
+  "caps": ["http", "git"],
+  "enabled": true,
+  "note": "调研收录（2026-09）：GitHub 镜像，支持文件下载加速及 git 命令行。"
+}

@@ -25,8 +25,14 @@ sys.path.insert(0, str(SCRIPTS))
 sys.dont_write_bytecode = True
 
 from _harness import check, finish        # noqa: E402
+import json                               # noqa: E402
 import lines                              # noqa: E402
 import probe                              # noqa: E402
+import channel_cdn                        # noqa: E402
+import channel_mirror                     # noqa: E402
+import channel_pin                        # noqa: E402
+
+ip_domains = json.loads((TESTS.parent / "sources" / "ip" / "domains.json").read_text(encoding="utf-8"))["domains"]
 
 WELL_KNOWN_HTTP = ["gh-proxy.com", "ghfast.top", "ghproxy.net", "ghproxy.homeboyc.cn",
                    "github.akams.cn", "hub.gitmirror.com", "github.moeyy.xyz"]
@@ -35,26 +41,28 @@ WELL_KNOWN_CDN = ["jsdelivr", "jsdelivr-fastly", "statically", "githack"]
 
 
 def main() -> int:
-    # ---------- 源池完整性（收录原则：社区公认 + 只增不删） ----------
-    http = [s["name"] for s in lines.MIRROR_SOURCES if "http" in s["caps"]]
-    git = [s["name"] for s in lines.MIRROR_SOURCES if "git" in s["caps"]]
-    cdn = [c["name"] for c in lines.CDN_SOURCES]
+    # ---------- 源池完整性（收录原则：社区公认 + 只增不删；源池在各方式目录） ----------
+    http = [s["name"] for s in channel_mirror.SOURCES if "http" in s["caps"]]
+    git = [s["name"] for s in channel_mirror.SOURCES if "git" in s["caps"]]
+    cdn = [c["name"] for c in channel_cdn.SOURCES]
     check("P1 镜像池含全部社区公认源（含当前可能不可达者，不得删除）",
           all(n in http for n in WELL_KNOWN_HTTP) and all(n in git for n in WELL_KNOWN_GIT),
           "http=%d git=%d" % (len(http), len(git)))
     check("P2 CDN 池含 jsDelivr 多边缘 + 公认等价源（statically/githack）",
           all(n in cdn for n in WELL_KNOWN_CDN), cdn)
     check("P3 每条源都有 name/url/caps/note 且名字唯一",
-          len({s["name"] for s in lines.MIRROR_SOURCES}) == len(lines.MIRROR_SOURCES)
-          and len({c["name"] for c in lines.CDN_SOURCES}) == len(lines.CDN_SOURCES)
-          and all(s.get("url") and s.get("caps") and s.get("note") for s in lines.MIRROR_SOURCES)
-          and all(c.get("url") and c.get("note") for c in lines.CDN_SOURCES), None)
-    pin_src = (SCRIPTS / "channel_pin.py").read_text(encoding="utf-8")
-    i_cf = pin_src.index("hosts = _fetch_cloud_fn()")
-    i_doh = pin_src.index("_fetch_doh(d)")
-    i_hard = pin_src.index("lines.IP_POOLS.items()")
-    check("P4 动态源第一优先：云函数 → DoH → 硬编码（顺序固定在 fetch_hosts 源码中）",
-          i_cf < i_doh < i_hard, (i_cf, i_doh, i_hard))
+          len({s["name"] for s in channel_mirror.SOURCES}) == len(channel_mirror.SOURCES)
+          and len({c["name"] for c in channel_cdn.SOURCES}) == len(channel_cdn.SOURCES)
+          and all(s.get("url") and s.get("caps") and s.get("note") for s in channel_mirror.SOURCES)
+          and all(c.get("url") and c.get("note") for c in channel_cdn.SOURCES), None)
+    pin_src = (TESTS.parent / "channels" / "pin" / "channel_pin.py").read_text(encoding="utf-8")
+    check("P4 pin = 纯应用通道（零获取逻辑：调资源层 hub，无本地探测/池）",
+          "hub.collect" in pin_src.replace(" ", "") or "_hub.collect()" in pin_src
+          and "_fetch_ipscan" not in pin_src and "POOLS" not in pin_src, None)
+    check("P4b 宽域清单来自资源层 domains.json 且覆盖核心 GitHub 域",
+          all(d in ip_domains for d in ("github.com", "raw.githubusercontent.com",
+                                        "api.github.com", "codeload.github.com", "github.io")),
+          len(ip_domains))
 
     # ---------- 账本：失败只冷却、永不删除 ----------
     key = "gh-proxy.com"

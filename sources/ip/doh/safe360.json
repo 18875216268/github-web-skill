@@ -1,0 +1,7 @@
+{
+  "name": "safe360",
+  "enabled": true,
+  "url": "https://doh.360.cn/resolve",
+  "style": "resolve",
+  "note": "360 安全 DNS——国内第三家大厂公共 DoH，独立解析路径。"
+}

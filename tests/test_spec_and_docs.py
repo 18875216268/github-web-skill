@@ -2,7 +2,7 @@
 """规范合规 + 三向一致性审计（离线，可复跑）。
 
 覆盖四组：
-  A 规范合规：SKILL.md frontmatter（name/description/license/compatibility/metadata）、目录同名、官方 skills-ref
+  A 规范合规：SKILL.md frontmatter（name/description/license/compatibility/metadata）、目录同名、官方 skills-ref（套件形态：临时以 SKILL.md 校验）
   B 文档↔代码：通道文件与入口函数、子命令、环境变量、退出码、清单层级/域名、场景↔CLI 映射、ROUTES 无漂移
   C 代码↔代码：全部可编译、预算透传、运行期零写包
   D 健壮性：缓存损坏、hosts 缺失、未知通道、非 https、routes 校验
@@ -38,6 +38,17 @@ import gh                                 # noqa: E402
 import probe                              # noqa: E402
 import lines                              # noqa: E402
 
+
+def _load_src(name: str, rel: str):
+    """按包相对路径加载资源层模块（sources/ 无包结构，路径加载）。"""
+    import importlib.util
+    p = PKG / rel
+    spec = importlib.util.spec_from_file_location("tsrc_" + name, p)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
 SKILL = (PKG / "SKILL.md").read_text(encoding="utf-8")
 FM = SKILL.split("---")[1] if SKILL.startswith("---") else ""
 GH_SRC = (SCRIPTS / "gh.py").read_text(encoding="utf-8")
@@ -70,7 +81,12 @@ def main() -> int:
 
     # ---------------- A 规范合规 ----------------
     name, desc = fm("name"), fm("description")
-    check("A1 name 与目录同名", name == PKG.name, "%s / %s" % (name, PKG.name))
+    mounted = PKG.parent.name == "assets" and PKG.parent.parent.name == "library"
+    if mounted:   # 挂载态：目录名由宿主分配（≠资产名）→ 规范同名校验不适用，记通过并注明
+        check("A1 name 与目录同名（挂载态：目录名由宿主分配 → 跳过）", True,
+              "挂载目录 = %s ｜ name = %s" % (PKG.name, name))
+    else:
+        check("A1 name 与目录同名", name == PKG.name, "%s / %s" % (name, PKG.name))
     check("A2 name 合规（小写+连字符、≤64、无首尾/连续连字符）",
           bool(name) and re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) is not None and len(name) <= 64, name)
     check("A3 description 非空且 ≤1024 字符", bool(desc) and 0 < len(desc) <= 1024, len(desc or ""))
@@ -87,14 +103,23 @@ def main() -> int:
     lic = PKG / "LICENSE"
     check("A9 发布件齐全：LICENSE 文件存在且为 MIT（与 frontmatter 声明一致）",
           lic.exists() and "MIT License" in lic.read_text(encoding="utf-8"), fm("license"))
+    _tmp = None
     try:
-        r = subprocess.run([sys.executable, "-m", "skills_ref.cli", "validate", str(PKG)],
+        _tmp = Path(tempfile.mkdtemp(prefix="gh_spec_"))
+        _pkg = _tmp / (name or PKG.name)          # 规范名（挂载态目录名≠资产名，校验须按规范名）
+        shutil.copytree(PKG, _pkg)
+        r = subprocess.run([sys.executable, "-m", "skills_ref.cli", "validate", str(_pkg)],
                            capture_output=True, text=True, timeout=120,
                            encoding="utf-8", errors="replace")
         out = (r.stdout or "") + (r.stderr or "")
-        check("A8 官方 skills-ref validate 通过", r.returncode == 0 and "Valid skill" in out, out[:160])
+        check("A8 官方 skills-ref validate 通过（规范形态 SKILL.md）",
+              r.returncode == 0 and "Valid skill" in out, out[:160])
     except Exception as exc:
-        check("A8 官方 skills-ref validate 通过", True, "未安装 skills_ref，跳过：%s" % str(exc)[:60])
+        check("A8 官方 skills-ref validate 通过（规范形态 SKILL.md）", True,
+              "未安装 skills_ref，跳过：%s" % str(exc)[:60])
+    finally:
+        if _tmp:
+            shutil.rmtree(_tmp, ignore_errors=True)
 
     # ---------------- B 文档↔代码 ----------------
     expect = {"direct": ["http_get", "git_run"], "cdn": ["fetch", "build_urls"],
@@ -108,7 +133,7 @@ def main() -> int:
         if not spec or not spec.get("file"):
             miss.append("%s: 无文件声明" % ch)
             continue
-        if not (SCRIPTS / spec["file"]).exists():
+        if not (PKG / spec["file"]).exists():      # file 为包相对路径（如 channels/pin/channel_pin.py）
             miss.append(spec["file"])
         miss += ["%s.%s" % (ch, fn) for fn in fns if not hasattr(mods[ch], fn)]
     check("B1/B2 通道文件存在且导出约定入口", not miss, miss)
@@ -123,12 +148,12 @@ def main() -> int:
     for f in SCRIPTS.glob("*.py"):
         used_vars |= set(re.findall(r"environ\.get\(\"(GH_[A-Z_]+)\"", f.read_text(encoding="utf-8")))
     check("B4 代码使用的 GH_* 变量全部在 SKILL.md 有文档",
-          used_vars <= {"GH_ACCESS_HOME", "GH_HOSTS_FILE", "GH_CLOUD_FN"}
+          used_vars <= {"GH_ACCESS_HOME", "GH_HOSTS_FILE"}
           and all(v in SKILL for v in used_vars), sorted(used_vars))
 
     codes = set(re.findall(r"args\.quiet,\s*(\d)\)", GH_SRC))
-    check("B5 退出码：实现只用到 2/3 显式码且文档列出 0/1/2/3",
-          codes <= {"2", "3"} and all(x in SKILL for x in ("`0`", "`1`", "`2`", "`3`")), sorted(codes))
+    check("B5 退出码：实现显式码 ∈ {1,2,3} 且文档列出 0/1/2/3",
+          codes <= {"1", "2", "3"} and all(x in SKILL for x in ("`0`", "`1`", "`2`", "`3`")), sorted(codes))
 
     check("B6 manifest.layers 路径全部存在",
           all((PKG / l["path"]).exists() for l in man["layers"]),
@@ -137,15 +162,27 @@ def main() -> int:
           man["version"] == meta.get("version", "").strip('"'), "%s / %s" % (man["version"], meta.get("version")))
 
     doms = set()
-    for c in lines.CDN_TEMPLATES:
-        doms.add(re.sub(r"^https://", "", c["url"]).split("/")[0])
-    for m in lines.MIRROR_HTTP + lines.MIRROR_GIT:
-        doms.add(re.sub(r"^https://", "", m).split("/")[0])
-    for u in [lines.CLOUD_FN_DEFAULT, *lines.DOH_SERVERS]:
-        doms.add(re.sub(r"^https://", "", u).split("/")[0])
-    doms |= set(lines.PIN_DOMAINS)
+    ip_domains = json.loads((PKG / "sources" / "ip" / "domains.json").read_text(encoding="utf-8"))["domains"]
+    for c in channel_cdn.SOURCES:
+        doms.add(re.sub(r"^https?://", "", c["url"]).split("/")[0])
+    for m in channel_mirror.SOURCES:
+        doms.add(re.sub(r"^https?://", "", m["url"]).split("/")[0])
+    # 资源层（sources/）：全部源 json 的 url 域 + 全量域清单（hub --endpoints 同口径）
+    for jf in (PKG / "sources").rglob("*.json"):
+        try:
+            data = json.loads(jf.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        items = data.get("sources") if isinstance(data, dict) and "sources" in data else (
+            [data] if isinstance(data, dict) and data.get("url") else [])
+        for it in items or []:
+            u = str(it.get("url") or "")
+            if u:
+                doms.add(re.sub(r"^https?://", "", u).split("/")[0])
+    doms |= set(ip_domains)
     allow = set(man["network"]["allow_domains"])
-    check("B7 manifest 网络声明覆盖 lines.py 全部域名", doms <= allow, sorted(doms - allow))
+    check("B7 manifest 网络声明覆盖全部出网域（资源层三节+全量域清单）",
+          doms <= allow, sorted(doms - allow))
     check("B7b manifest 声明了 --url 任意 https 能力", "--url" in man["network"].get("note", ""),
           man["network"].get("note", "")[:60])
 
@@ -159,13 +196,15 @@ def main() -> int:
 
     # ---------------- C 代码↔代码 ----------------
     bad = []
-    for f in list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py")):
+    for f in (list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py"))
+              + list((PKG / "channels").glob("*/*.py")) + list((PKG / "channels").glob("*/*/*.py"))):
         try:
             compile(f.read_text(encoding="utf-8"), str(f), "exec")   # 纯内存语法编译：不落字节码
         except SyntaxError as exc:
             bad.append("%s: %s" % (f.name, exc))
     check("C1 全部 .py 语法可编译（零字节码写入）", not bad, bad)
-    check("C2 预算透传到 pin / mirror 内部（>=4 处）", GH_SRC.count("budget=bud") >= 4, GH_SRC.count("budget=bud"))
+    check("C2 预算透传到统一分发处（get/git 各一处 budget=bud）",
+          GH_SRC.count("budget=bud") >= 2, GH_SRC.count("budget=bud"))
 
     before = tree()
     subprocess.run([sys.executable, str(SCRIPTS / "gh.py"), "routes", "--check"],
@@ -214,20 +253,20 @@ def main() -> int:
           hasattr(channel_pin, "verify_for_hosts") and "verify_for_hosts" in GH_SRC
           and "raw.githubusercontent.com" in getattr(lines, "STRICT_PROBE_URLS", {}), None)
 
-    sample = ("140.82.112.26  alive.github.com\n"
-              "20.205.243.166 github.com\n"
-              "140.82.112.26 github.com\n"
-              "坏行 应当被忽略\n")
-    parsed = channel_pin._parse_cloud_fn(sample)
-    check("D7 云函数解析：alive.<域> 归一化到该域且存活 IP 排最前、无伪域名",
-          parsed.get("github.com", [])[:2] == ["140.82.112.26", "20.205.243.166"]
-          and not any(k.startswith("alive.") for k in parsed)
-          and "坏行" not in parsed, parsed)
+    # D7 外部清单源（资源层 hosts_file）：失败不抛出、返回空（多源容错纪律）
+    hfm = _load_src("hf", "sources/ip/hosts_file/fetch.py")
+    name, got, detail = hfm._pull({"name": "t", "url": "https://127.0.0.1:1/hosts"})
+    check("D7 外部清单源：失败不抛出、返回空", got == {} and "失败" in detail, detail)
+    check("D7b hosts 行解析：标准行命中、坏行忽略",
+          hfm.HOSTS_LINE.match("1.2.3.4 github.com") is not None
+          and hfm.HOSTS_LINE.match("坏行 应当被忽略") is None, None)
 
-    check("C4 随包代码零字节码残留（scripts/ 与包根；tests/ 的缓存属开发侧不计）",
-          not list(SCRIPTS.rglob("__pycache__")) and not list(SCRIPTS.rglob("*.pyc"))
-          and not list(PKG.glob("*.pyc")),
-          [str(p.relative_to(PKG)) for p in SCRIPTS.rglob("__pycache__")][:3])
+    # 2026-09-28：__pycache__/.pyc 是本机运行时产物（跑 gh.py/tests 必生成）→ 移出开发自检；
+    # 「随包零字节码」改在导出发布包时检查（export_release 流程）。
+    check("C4 随包代码无静态残留（.orig/.log/.tmp/_tmp；tests/ 的缓存属开发侧不计）",
+          not list(SCRIPTS.rglob("*.orig")) and not list(SCRIPTS.rglob("*.log"))
+          and not list(SCRIPTS.rglob("*.tmp")) and not list(SCRIPTS.rglob("_tmp*")),
+          [str(p.relative_to(PKG)) for p in list(SCRIPTS.rglob("*.orig")) + list(SCRIPTS.rglob("*.tmp"))][:3])
 
     shutil.rmtree(HOME, ignore_errors=True)
     return finish("test_spec_and_docs")

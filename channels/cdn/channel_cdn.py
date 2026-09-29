@@ -7,18 +7,22 @@
 """
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
-import lines
 import probe
-from channel_direct import http_get
+from channel_direct import http_get as _curl_get
 
-SRCS = {s["name"]: s for s in lines.CDN_SOURCES}
+# 源池：统一资源层（sources/cdn/static/cdn.json——源与消费分离，D16/D22）
+SOURCES = json.loads((Path(__file__).resolve().parents[2] / "sources" / "cdn" / "static" / "cdn.json")
+                     .read_text(encoding="utf-8"))["sources"]
+SRCS = {s["name"]: s for s in SOURCES}
 
 
 def build_urls(owner: str, repo: str, ref: str, path: str) -> list:
     return [(c["name"], c["url"].format(owner=owner, repo=repo, ref=ref, path=path))
-            for c in lines.CDN_SOURCES]
+            for c in SOURCES]
 
 
 def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float) -> dict:
@@ -27,7 +31,7 @@ def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float
     u = dict(urls)
     tried = []
     for name in probe.candidates(names, probe_pairs=list(urls)):
-        r = http_get(u[name], dest, timeout)
+        r = _curl_get(u[name], dest, timeout)
         probe.record(name, bool(r["ok"]), float(r.get("elapsed", 0.0)) * 1000, r.get("detail", ""))
         tried.append({"cdn": name, "ok": r["ok"], "detail": r.get("detail")})
         if r["ok"]:
@@ -43,3 +47,25 @@ def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float
     return {"ok": False, "channel": "cdn", "third_party": "media-cdn",
             "elapsed": sum(x.get("elapsed", 0) for x in tried) or 0.0,
             "detail": "全部 CDN 域失败", "tried": tried}
+
+
+_RAW_RE = re.compile(r"https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)")
+
+
+def http_get(raw_url: str, dest: Path, timeout: float, budget=None) -> dict:
+    """统一入口（注册表分发用）：仅支持 raw 形式链接——解析出 owner/repo/ref/path 后走 fetch。
+
+    非 raw 链接（Release 资产 / codeload 等）CDN 天然不适用：如实报不适用（上层会继续降级）。
+    """
+    m = _RAW_RE.match(raw_url or "")
+    if not m:
+        return {"ok": False, "channel": "cdn", "third_party": "media-cdn", "elapsed": 0.0,
+                "detail": "CDN 仅适用 raw 形式的单文件（当前链接非 raw）"}
+    return fetch(m.group(1), m.group(2), m.group(3), m.group(4), dest, timeout)
+
+
+def git_run(args: list, cwd: str | None, timeout: float, budget=None) -> dict:
+    """统一接口占位：cdn 无 git 能力（源池只做 HTTP 只读），如实报不支持。"""
+    return {"ok": False, "channel": "cdn", "third_party": "media-cdn", "rc": 1,
+            "out": "", "err": "", "elapsed": 0.0,
+            "detail": "cdn 不支持 git 操作（内容来源通道，无 git 能力）"}

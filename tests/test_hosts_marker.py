@@ -15,8 +15,8 @@ os.environ["GH_HOSTS_FILE"] = str(tmp / "hosts")     # 假 hosts
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent / "scripts"))
 
+from _harness import check, finish  # noqa: E402   # 先引导（harness 注入 channels/*/ 路径）
 import channel_hosts  # noqa: E402
-from _harness import check, finish  # noqa: E402
 
 ORIGINAL = "127.0.0.1 localhost\n# 用户自己的内容\n"
 POOL = {"raw.githubusercontent.com": ["185.199.108.133"], "github.com": ["140.82.113.3"]}

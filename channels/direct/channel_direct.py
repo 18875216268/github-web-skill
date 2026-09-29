@@ -26,8 +26,8 @@ def head_ok(url: str, timeout: float) -> dict:
         args = (env_guard.curl_base(timeout) + method_args
                 + ["-L", "--max-redirs", "5", "-o", os.devnull, "-w", "%{http_code}", url])
         try:
-            p = subprocess.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                               timeout=timeout + 3)
+            p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=env_guard.clean_env(), timeout=timeout + 3)
         except Exception:
             return "000"
         return ((p.stdout or "").strip().splitlines() or ["000"])[-1]
@@ -42,15 +42,15 @@ def head_ok(url: str, timeout: float) -> dict:
             "detail": "HEAD %s" % code}
 
 
-def http_get(url: str, dest: Path, timeout: float, extra: list | None = None) -> dict:
+def http_get(url: str, dest: Path, timeout: float, extra: list | None = None, budget=None) -> dict:
     t0 = time.perf_counter()
     extra = extra or []
     allow_proxy = "-x" in extra            # 只有显式代理（pin 通道）才保留代理
     args = (env_guard.curl_base(timeout, allow_proxy=allow_proxy)
             + ["-L", "--max-redirs", "5", "-o", str(dest), "-w", "%{http_code}", *extra, url])
     try:
-        p = subprocess.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                           timeout=timeout + 6)
+        p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=env_guard.clean_env(), timeout=timeout + 6)
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "curl 超时", "elapsed": round(time.perf_counter() - t0, 2)}
     except FileNotFoundError:
@@ -86,13 +86,13 @@ def content_sane(dest: Path, path: str) -> tuple:
     return True, ""
 
 
-def git_run(args: list, cwd: str | None, timeout: float) -> dict:
+def git_run(args: list, cwd: str | None, timeout: float, budget=None) -> dict:
     t0 = time.perf_counter()
     if not env_guard.have_git():
         return {"ok": False, "detail": "未安装 git", "elapsed": 0.0, "rc": -1, "out": "", "err": ""}
     cmd = ["git", *env_guard.git_config_prefix(), *args]
     try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            env=env_guard.clean_env(), timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "git 超时", "elapsed": round(time.perf_counter() - t0, 2),

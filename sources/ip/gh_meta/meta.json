@@ -1,0 +1,6 @@
+{
+  "name": "gh_meta",
+  "enabled": true,
+  "url": "https://api.github.com/meta",
+  "note": "GitHub 官方 IP 段（CIDR）——安全闸：IP 候选 ∈ 官方段校验，过滤污染/劫持候选。官方端点不可达时静默跳过（不阻塞主流程）。"
+}

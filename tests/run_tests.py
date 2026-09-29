@@ -18,7 +18,7 @@ for _s in (sys.stdout, sys.stderr):
 
 TESTS = Path(__file__).resolve().parent
 SUITE = ["test_spec_and_docs.py", "test_quality.py", "test_probe.py", "test_budget.py",
-         "test_routing.py", "test_hosts_marker.py"]
+         "test_routing.py", "test_hosts_marker.py", "test_sources.py", "test_update.py"]
 SMOKE = "test_readonly_smoke.py"
 
 

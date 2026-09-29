@@ -1,0 +1,6 @@
+{
+  "name": "ineo6",
+  "enabled": true,
+  "url": "https://gitlab.com/ineo6/hosts/-/raw/master/next-hosts",
+  "note": "ineo6/hosts（湖中剑）：GitLab 镜像端点，每小时自动更新——第二条非 GitHub 可达路径。"
+}

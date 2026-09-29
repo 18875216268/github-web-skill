@@ -1,0 +1,6 @@
+{
+  "name": "dnspod",
+  "enabled": true,
+  "url": "https://1.12.12.12/resolve",
+  "note": "DNSPod 公共 DoH——阿里之外的独立解析路径。"
+}

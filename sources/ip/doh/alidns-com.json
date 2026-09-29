@@ -1,0 +1,7 @@
+{
+  "name": "alidns-com",
+  "enabled": true,
+  "url": "https://dns.alidns.com/resolve",
+  "style": "resolve",
+  "note": "阿里 DoH 域名形式（与 223.5.5.5 IP 形式互为备份——域名解析路径独立于 IP 直连）。"
+}

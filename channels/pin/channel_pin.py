@@ -1,18 +1,16 @@
-"""通道 pin：不改源，只绕 DNS/线路——取可达 IP，再在**单次调用**内钉住。
+"""通道 pin：不改源，只绕 DNS/线路——纯应用通道（D22）：资源层给 IP，这里只管钉。
 
-IP 来源（动态优先）：
-  1) 用户自建云函数（可达 IP，按延迟排序）
-  2) DoH（阿里 / DNSPod，绕过本地 DNS 污染）
-  3) 内置硬编码池（lines.IP_POOLS，实测可用清单）
-应用方式：本地 CONNECT 代理（127.0.0.1 随机端口），只钉 GitHub 相关域；
+供给：sources/hub.py（多源聚合+统一测速，每次全新拉取）——本通道零获取逻辑（D17/D21）。
+应用方式：本地 CONNECT 代理（127.0.0.1 随机端口），按域名匹配钉候选（内建行为，非过滤配置）；
   不写系统 hosts、无需管理员、进程结束即失效；代理内单 IP 连接超时收紧（实测 12s 会吃掉预算）。
+运行优化（不产生候选）：历史好 IP 置顶（30min）+ 实测存活提前（5min）——单次调用 failover 体验。
 """
 from __future__ import annotations
 
 import json
 import re
 import socket
-import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -21,9 +19,19 @@ import env_guard
 import lines
 import report
 
-CACHE_F = report.HOME / "cache" / "ip.json"
+# 资源层供给（sources/hub.py——多源聚合+统一测速）
+_SRC_ROOT = Path(__file__).resolve().parents[2] / "sources"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+import hub as _hub  # noqa: E402
+
 GOOD_F = report.HOME / "cache" / "ip_good.json"
-IP_RE = re.compile(r'"data":"(\d+\.\d+\.\d+\.\d+)"')
+
+
+def fetch_hosts() -> dict:
+    """域名 → 候选 IP（资源层供给全量，按域组织、延迟升序）；本通道零过滤（D21）。"""
+    r = _hub.collect()
+    return r.get("ip", {}).get("by_domain") or {}
 
 
 def _load_good() -> dict:
@@ -105,90 +113,6 @@ def _apply_good(hosts: dict) -> dict:
         g = (good.get(domain) or {}).get("ip")
         out[domain] = ([g] + [ip for ip in ips if ip != g]) if g else list(ips)
     return out
-
-
-def _parse_cloud_fn(text: str) -> dict:
-    """解析云函数输出：每行 `IP<空白>域名`。
-
-    `alive.<域>` 是函数自己的「实测存活」标记（2026-09-11 取原始输出核对：145 行中 1 行），
-    必须归一化到 `<域>` 并**排在候选最前**——否则函数的存活 IP 永远进不了候选（历史 bug）。
-    """
-    alive, other = {}, {}
-    for ln in (text or "").splitlines():
-        parts = ln.split()
-        if len(parts) != 2 or not re.fullmatch(r"\d+\.\d+\.\d+\.\d+", parts[0]):
-            continue
-        ip, dom = parts[0], parts[1]
-        bucket = other
-        if dom.startswith("alive."):
-            dom, bucket = dom[len("alive."):], alive
-        if ip not in bucket.setdefault(dom, []):
-            bucket[dom].append(ip)
-    out = {}
-    for dom in set(alive) | set(other):
-        head = alive.get(dom, [])
-        out[dom] = head + [ip for ip in other.get(dom, []) if ip not in head]
-    return out
-
-
-def _fetch_cloud_fn() -> dict:
-    url = (lines.CLOUD_FN_DEFAULT.rstrip("/") + "/?source=" + lines.CLOUD_FN_SOURCE)
-    args = env_guard.curl_base(lines.CLOUD_FN_TIMEOUT) + [url]
-    try:
-        p = subprocess.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                           timeout=lines.CLOUD_FN_TIMEOUT + 6)
-    except Exception:
-        return {}
-    return _parse_cloud_fn(p.stdout or "")
-
-
-def _fetch_doh(domain: str) -> list:
-    got = []
-    for srv in lines.DOH_SERVERS:
-        url = "%s?name=%s&type=A" % (srv, domain)
-        args = env_guard.curl_base(lines.DOH_TIMEOUT) + [url]
-        try:
-            p = subprocess.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                               timeout=lines.DOH_TIMEOUT + 4)
-        except Exception:
-            continue
-        got += IP_RE.findall(p.stdout or "")
-    seen, out = set(), []
-    for ip in got:
-        if ip not in seen:
-            seen.add(ip)
-            out.append(ip)
-    return out
-
-
-def fetch_hosts() -> dict:
-    """域名 → 候选 IP 列表（动态源优先，硬编码兜底）；结果写用户区缓存。"""
-    hosts = _fetch_cloud_fn()
-    for d in lines.PIN_DOMAINS:
-        for ip in _fetch_doh(d):
-            if ip not in hosts.setdefault(d, []):
-                hosts[d].append(ip)
-    for d, pool in lines.IP_POOLS.items():
-        for ip in pool:
-            if ip not in hosts.setdefault(d, []):
-                hosts[d].append(ip)
-    hosts = {d: v[:lines.PIN_CANDIDATES_PER_DOMAIN] for d, v in hosts.items() if v}
-    try:
-        report.ensure_home()
-        CACHE_F.write_text(json.dumps({"ts": time.time(), "hosts": hosts}), encoding="utf-8")
-    except Exception:
-        pass
-    return hosts
-
-
-def cached_hosts() -> dict:
-    try:
-        d = json.loads(CACHE_F.read_text(encoding="utf-8"))
-        if time.time() - d.get("ts", 0) < lines.CACHE_TTL["ip"]:
-            return d.get("hosts") or {}
-    except Exception:
-        pass
-    return {}
 
 
 class PinProxy:
@@ -302,8 +226,8 @@ def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
             "-o", devnull, "-w", "%{http_code}",
             "--resolve", "%s:443:%s" % (domain, ip), "https://%s/" % domain]
         try:
-            p = _sp.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                        timeout=timeout + 4)
+            p = _sp.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        env=env_guard.clean_env(), timeout=timeout + 4)
         except Exception as exc:
             return {"ok": False, "detail": str(exc)[:60]}
         code = ((p.stdout or "000").strip().splitlines() or ["000"])[-1]
@@ -346,8 +270,8 @@ def verify_for_hosts(hosts: dict, limit: int = 2, timeout: float = 6.0) -> dict:
             "-r", "0-0", "-o", devnull, "-w", "%{http_code}",
             "--resolve", "%s:443:%s" % (domain, ip), strict[domain]]
         try:
-            p = _sp.run(args, capture_output=True, text=True, env=env_guard.clean_env(),
-                        timeout=timeout + 4)
+            p = _sp.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        env=env_guard.clean_env(), timeout=timeout + 4)
         except Exception as exc:
             return {"ok": False, "detail": str(exc)[:60]}
         code = ((p.stdout or "000").strip().splitlines() or ["000"])[-1]
@@ -385,7 +309,7 @@ def _rotations(hosts: dict, rounds: int = 3):
 def http_get(url: str, dest: Path, timeout: float, hosts: dict | None = None,
              rounds: int = 4, budget=None) -> dict:
     host = re.sub(r"^https?://", "", url).split("/")[0]
-    hosts = _verify_first(_apply_good(hosts or cached_hosts() or fetch_hosts()), [host])
+    hosts = _verify_first(_apply_good(hosts or fetch_hosts()), [host])
     last = {"ok": False, "detail": "无候选可试"}
     for k, rot in enumerate(_rotations(hosts, rounds)):
         if budget is not None and not budget.can_attempt():
@@ -424,7 +348,7 @@ def git_run(args: list, cwd: str | None, timeout: float, hosts: dict | None = No
         if m:
             host = m.group(1)
             break
-    hosts = _verify_first(_apply_good(hosts or cached_hosts() or fetch_hosts()), [host] if host else [])
+    hosts = _verify_first(_apply_good(hosts or fetch_hosts()), [host] if host else [])
     last = {"ok": False, "detail": "无候选可试", "rc": 1, "out": "", "err": ""}
     for k, rot in enumerate(_rotations(hosts, rounds)):
         if budget is not None and not budget.can_attempt():

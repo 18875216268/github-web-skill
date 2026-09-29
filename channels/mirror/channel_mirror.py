@@ -3,25 +3,29 @@
 作用：直连与钉 IP 都失败时的只读兜底。
 红线：**push / 写操作永不经过本通道**（第三方转发不接触用户写入流量）。
 择路：账本热源直取 → **并发探活（HEAD / git ls-remote）完成即用** → 其余按账本序兜底；
-     失败只冷却、永不删除（源可能只是暂时不可达，见 lines.MIRROR_SOURCES 收录原则）。
+     失败只冷却、永不删除（源可能只是暂时不可达，见本目录 sources.json 收录原则）。
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import lines
 import probe
 
-SRCS = {s["name"]: s for s in lines.MIRROR_SOURCES}
+# 源池：统一资源层（sources/mirror/static/mirror.json——源与消费分离，D16/D22）
+SOURCES = json.loads((Path(__file__).resolve().parents[2] / "sources" / "mirror" / "static" / "mirror.json")
+                     .read_text(encoding="utf-8"))["sources"]
+SRCS = {s["name"]: s for s in SOURCES}
 
 
 def _http_names() -> list:
-    return [s["name"] for s in lines.MIRROR_SOURCES if "http" in s["caps"]]
+    return [s["name"] for s in SOURCES if "http" in s["caps"]]
 
 
 def _git_names() -> list:
-    return [s["name"] for s in lines.MIRROR_SOURCES if "git" in s["caps"]]
+    return [s["name"] for s in SOURCES if "git" in s["caps"]]
 
 
 def _git_args(name: str, args: list) -> list:

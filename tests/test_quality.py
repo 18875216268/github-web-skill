@@ -21,6 +21,9 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 PKG = TESTS.parent
 SCRIPTS = PKG / "scripts"
+CHANNELS = PKG / "channels"
+PY_FILES = (list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py"))
+            + list(CHANNELS.glob("*/*.py")))          # 治理层 + 测试 + 全部方式实现
 HOME = Path(tempfile.mkdtemp(prefix="gh_quality_home_"))
 os.environ["GH_ACCESS_HOME"] = str(HOME)
 sys.path.insert(0, str(TESTS))
@@ -76,14 +79,15 @@ def main() -> int:
 
     # Q4 开发残留物（*.bak 是 hosts 回滚备份，按设计豁免）
     junk = [str(p.relative_to(PKG)) for p in PKG.rglob("*")
-            if p.name in ("__pycache__", ".DS_Store")
-            or p.suffix in (".pyc", ".orig", ".log", ".tmp", ".swp")
+            if p.name == ".DS_Store"
+            or p.suffix in (".orig", ".log", ".tmp", ".swp")
             or p.name.startswith("_tmp")]
-    check("Q4 无开发残留物（.pyc/__pycache__/_tmp/日志/编辑器垃圾）", not junk, junk)
+    check("Q4 无开发残留物（.bak 除外：hosts 回滚备份；__pycache__/.pyc 属运行时产物，导出发布时检查）",
+          not junk, junk)
 
-    # Q5 调试残留（print 仅合法于 report.py 的输出层；tests 的 PASS/FAIL 打印是其接口）
+    # Q5 调试残留（print 仅合法于 report.py 的输出层与 tests 的 PASS/FAIL 接口；无断点调试器）
     bad = []
-    for p in SCRIPTS.glob("*.py"):
+    for p in [x for x in PY_FILES if x.parent.name != "tests"]:
         src = p.read_text(encoding="utf-8")
         if p.name != "report.py" and re.search(r"(?<![\w.])print\(", src):
             bad.append("%s: print(" % p.name)
@@ -96,7 +100,7 @@ def main() -> int:
 
     # Q6 未使用 import
     bad = []
-    for p in list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py")):
+    for p in PY_FILES:
         src = p.read_text(encoding="utf-8")
         tree = ast.parse(src)
         names = []
@@ -137,13 +141,13 @@ def main() -> int:
 
     # Q9 死配置：lines 配置字典的每个键都必须被代码引用
     bad = []
-    for dict_name in ("CACHE_TTL", "PROBE", "DEFAULT_BUDGET"):
+    for dict_name in ("PROBE", "DEFAULT_BUDGET"):
         m = re.search(r"%s = \{(.*?)\}" % dict_name, LINES_SRC, re.S)
         if not m:
             bad.append("找不到 %s" % dict_name)
             continue
         for key in re.findall(r'"(\w+)":', m.group(1)):
-            refs = sum(1 for p in list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py"))
+            refs = sum(1 for p in PY_FILES
                        if re.search(r'%s\["%s"\]' % (dict_name, key), p.read_text(encoding="utf-8")))
             if refs == 0:
                 bad.append("%s[\"%s\"] 无引用（死配置）" % (dict_name, key))
@@ -157,13 +161,24 @@ def main() -> int:
             if "YYYY" in p or p.endswith(".jsonl"):     # 运行时模板（日志名等），非随包文件
                 continue
             if p.startswith(("./", "../")) or "/../" in p:
-                bad.append("%s: 相对越界引用 %s" % (rel, p))
+                # 相对引用：解析后仍在包内 = 合法（如 sources/ip/doh/ → ../domains.json）
+                try:
+                    inside = (rel.parent / p).resolve().is_relative_to(PKG.resolve())
+                except Exception:
+                    inside = False
+                if not inside:
+                    bad.append("%s: 相对越界引用 %s" % (rel, p))
                 continue
             if rel.suffix == ".py" and (rel.parts[0] == "tests" or len(rel.parts) > 1):
                 continue                       # 源码/测试内部引用按文件名解析，跳过
             if p in ("SKILL.md", "manifest.json", "README.md", "LICENSE"):
                 continue
-            if not (PKG / p).exists() and not any((PKG / d / p).exists() for d in ("scripts", "routes", "tests")):
+            def _in_pkg(name: str) -> bool:
+                if (PKG / name).exists():
+                    return True
+                base = name.replace("\\", "/").rsplit("/", 1)[-1]   # rglob 仅支持相对段：按文件名匹配
+                return any(any((PKG / d).rglob(base)) for d in ("scripts", "routes", "tests", "channels", "sources", "update"))
+            if not _in_pkg(p):
                 bad.append("%s: 引用了包外或不存在的文件 %s" % (rel, p))
         if "设计评审.md" in t or "参考/" in t:
             bad.append("%s: 引用了包外工程档案（发布包无法独立使用）" % rel)

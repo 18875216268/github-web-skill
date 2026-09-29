@@ -1,0 +1,607 @@
+{
+  "note": "镜像入口源（第三方转发池）——只读；写操作永不经过（红线）。收录原则：社区公认 + 参考包当期实测（失败≠失效，只增不删）；延迟为参考包采集时点数据，实时可用性由通道内 probe 账本择路。",
+  "sources": [
+    {
+      "name": "gh-proxy.com",
+      "url": "https://gh-proxy.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "社区主推；参考包当期 640ms"
+    },
+    {
+      "name": "ghfast.top",
+      "url": "https://ghfast.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "社区高频收录；参考包当期 1422ms"
+    },
+    {
+      "name": "gh.xxooo.cf",
+      "url": "https://gh.xxooo.cf",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "2026-09-11 实测可用"
+    },
+    {
+      "name": "gh-proxy.org",
+      "url": "https://gh-proxy.org",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "2026-09-11 实测可用"
+    },
+    {
+      "name": "ghproxy.net",
+      "url": "https://ghproxy.net",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "实测可用（断点续传）；参考包当期 291ms"
+    },
+    {
+      "name": "ghproxy.homeboyc.cn",
+      "url": "https://ghproxy.homeboyc.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "2026-09-11 实测 403；保留候选"
+    },
+    {
+      "name": "github.akams.cn",
+      "url": "https://github.akams.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "网页工具站；保留候选"
+    },
+    {
+      "name": "hub.gitmirror.com",
+      "url": "https://hub.gitmirror.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "社区老牌 gitmirror；参考包当期 N/A"
+    },
+    {
+      "name": "github.moeyy.xyz",
+      "url": "https://github.moeyy.xyz",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "社区老牌 moeyy 代理"
+    },
+    {
+      "name": "ghp.ci",
+      "url": "https://ghp.ci",
+      "caps": [
+        "http"
+      ],
+      "note": "社区推荐"
+    },
+    {
+      "name": "gh-proxy.net",
+      "url": "https://gh-proxy.net",
+      "caps": [
+        "http"
+      ],
+      "note": "历史：回 HTML 壳页（内容校验拦截）；保留候选"
+    },
+    {
+      "name": "xget.xi-xu.me",
+      "url": "https://xget.xi-xu.me",
+      "caps": [
+        "http"
+      ],
+      "note": "历史：曾 429 限流；保留候选"
+    },
+    {
+      "name": "ghps.cc",
+      "url": "https://ghps.cc",
+      "caps": [
+        "http"
+      ],
+      "note": "历史：可用性漂移；保留候选"
+    },
+    {
+      "name": "ghproxy.cc",
+      "url": "https://ghproxy.cc",
+      "caps": [
+        "http"
+      ],
+      "note": "历史知名；保留候选"
+    },
+    {
+      "name": "hub.fastgit.org",
+      "url": "https://hub.fastgit.org",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "历史知名（官方停服）；保留候选"
+    },
+    {
+      "name": "github.com.cnpmjs.org",
+      "url": "https://github.com.cnpmjs.org",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "历史知名；保留候选"
+    },
+    {
+      "name": "gitclone.com",
+      "url": "https://gitclone.com",
+      "caps": [
+        "git"
+      ],
+      "git_match": "https://github.com/",
+      "git_prefix": "https://gitclone.com/github.com/",
+      "note": "老牌 clone 加速（换主机式）"
+    },
+    {
+      "name": "kkgithub.com",
+      "url": "https://kkgithub.com",
+      "caps": [
+        "git"
+      ],
+      "git_match": "https://github.com/",
+      "git_prefix": "https://kkgithub.com/",
+      "note": "老牌界面镜像（换主机式）"
+    },
+    {
+      "name": "bgithub.xyz",
+      "url": "https://bgithub.xyz",
+      "caps": [
+        "git"
+      ],
+      "git_match": "https://github.com/",
+      "git_prefix": "https://bgithub.xyz/",
+      "note": "界面镜像（换主机式；git 支持交给探测）"
+    },
+    {
+      "name": "gh.qninq.cn",
+      "url": "https://gh.qninq.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 44ms（全场最优）"
+    },
+    {
+      "name": "ghm.078465.xyz",
+      "url": "https://ghm.078465.xyz",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 286ms"
+    },
+    {
+      "name": "ghproxy.net-cf",
+      "url": "https://ghproxy.net",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包当期 291ms（与 ghproxy.net 同源复测）"
+    },
+    {
+      "name": "down.mxw.xx.kg",
+      "url": "https://down.mxw.xx.kg",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 470ms"
+    },
+    {
+      "name": "gh.jjj.gv.uy",
+      "url": "https://gh.jjj.gv.uy",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 487ms"
+    },
+    {
+      "name": "githubdog.com",
+      "url": "https://githubdog.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 498ms"
+    },
+    {
+      "name": "ghproxy.imciel.com",
+      "url": "https://ghproxy.imciel.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 497ms"
+    },
+    {
+      "name": "gh.idayer.com",
+      "url": "https://gh.idayer.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 501ms"
+    },
+    {
+      "name": "ghproxy.cxkpro.top",
+      "url": "https://ghproxy.cxkpro.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 516ms"
+    },
+    {
+      "name": "gh.acmsz.top",
+      "url": "https://gh.acmsz.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 517ms"
+    },
+    {
+      "name": "777.z321.cc.cd",
+      "url": "https://777.z321.cc.cd",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 551ms"
+    },
+    {
+      "name": "gh.monlor.com",
+      "url": "https://gh.monlor.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 555ms"
+    },
+    {
+      "name": "ghp.keleyaa.com",
+      "url": "https://ghp.keleyaa.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 569ms"
+    },
+    {
+      "name": "github.ednovas.xyz",
+      "url": "https://github.ednovas.xyz",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 570ms"
+    },
+    {
+      "name": "ghfile.geekertao.top",
+      "url": "https://ghfile.geekertao.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 574ms"
+    },
+    {
+      "name": "gitproxy.mrhjx.cn",
+      "url": "https://gitproxy.mrhjx.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 643ms"
+    },
+    {
+      "name": "gh.927223.xyz",
+      "url": "https://gh.927223.xyz",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 675ms"
+    },
+    {
+      "name": "gh.07150721.xyz",
+      "url": "https://gh.07150721.xyz",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 702ms"
+    },
+    {
+      "name": "tvv.tw",
+      "url": "https://tvv.tw",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 731ms"
+    },
+    {
+      "name": "cfgh.ikgy.top",
+      "url": "https://cfgh.ikgy.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 755ms"
+    },
+    {
+      "name": "gh.jasonzeng.dev",
+      "url": "https://gh.jasonzeng.dev",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 820ms"
+    },
+    {
+      "name": "github.geekery.cn",
+      "url": "https://github.geekery.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 835ms"
+    },
+    {
+      "name": "gh.noki.eu.org",
+      "url": "https://gh.noki.eu.org",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 871ms"
+    },
+    {
+      "name": "git.yylx.win",
+      "url": "https://git.yylx.win",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 916ms"
+    },
+    {
+      "name": "gh.noki.icu",
+      "url": "https://gh.noki.icu",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 942ms"
+    },
+    {
+      "name": "gh.sixyin.com",
+      "url": "https://gh.sixyin.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 947ms"
+    },
+    {
+      "name": "jiashu.1win.eu.org",
+      "url": "https://jiashu.1win.eu.org",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 968ms"
+    },
+    {
+      "name": "fastgit.cc",
+      "url": "https://fastgit.cc",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1146ms"
+    },
+    {
+      "name": "gh.dpik.top",
+      "url": "https://gh.dpik.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1038ms"
+    },
+    {
+      "name": "github.tbap.top",
+      "url": "https://github.tbap.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1034ms"
+    },
+    {
+      "name": "github.mxw.qzz.io",
+      "url": "https://github.mxw.qzz.io",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1174ms"
+    },
+    {
+      "name": "gh.inkchills.cn",
+      "url": "https://gh.inkchills.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1235ms"
+    },
+    {
+      "name": "proxy.vvvv.ee",
+      "url": "https://proxy.vvvv.ee",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1278ms"
+    },
+    {
+      "name": "gh.my-website.ccwu.cc",
+      "url": "https://gh.my-website.ccwu.cc",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1434ms"
+    },
+    {
+      "name": "gh.felicity.ac.cn",
+      "url": "https://gh.felicity.ac.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1396ms"
+    },
+    {
+      "name": "gg.z321.cc.cd",
+      "url": "https://gg.z321.cc.cd",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1486ms"
+    },
+    {
+      "name": "gh.catmak.name",
+      "url": "https://gh.catmak.name",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1553ms"
+    },
+    {
+      "name": "gh.meali.top",
+      "url": "https://gh.meali.top",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1716ms"
+    },
+    {
+      "name": "ghproxy.monkeyray.net",
+      "url": "https://ghproxy.monkeyray.net",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1813ms"
+    },
+    {
+      "name": "gh.chjina.com",
+      "url": "https://gh.chjina.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录·当期 1853ms"
+    },
+    {
+      "name": "githubfast.com",
+      "url": "https://githubfast.com",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录（镜像站，标注可用）"
+    },
+    {
+      "name": "hub.yzuu.cf",
+      "url": "https://hub.yzuu.cf",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录（镜像站，标注可用）"
+    },
+    {
+      "name": "github.hscsec.cn",
+      "url": "https://github.hscsec.cn",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录（镜像站，标注可用）"
+    },
+    {
+      "name": "hub.nuaa.cf",
+      "url": "https://hub.nuaa.cf",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录（镜像站，标注可用）"
+    },
+    {
+      "name": "hub.gitfast.pro",
+      "url": "https://hub.gitfast.pro",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "note": "参考包收录（国内 CDN，稳定性高）"
+    },
+    {
+      "name": "github-ur1-fun",
+      "url": "https://github.ur1.fun",
+      "caps": [
+        "http",
+        "git"
+      ],
+      "enabled": true,
+      "note": "直接访问型镜像（参考包清单标注可用：加载快、支持 Markdown 渲染）"
+    },
+    {
+      "name": "toolwa",
+      "url": "http://toolwa.com/github",
+      "caps": [
+        "http"
+      ],
+      "enabled": false,
+      "note": "网页生成器型（粘贴链接出下载页，无编程前缀接口）——登记保留，待接线"
+    },
+    {
+      "name": "tuna-github-release",
+      "url": "https://mirrors.tuna.tsinghua.edu.cn/github-release",
+      "caps": [
+        "release"
+      ],
+      "enabled": false,
+      "note": "清华 Release 专属镜像（路径映射型：releases/download→release 改写）——通道暂只支持前缀式，登记待扩展"
+    }
+  ]
+}

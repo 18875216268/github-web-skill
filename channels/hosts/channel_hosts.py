@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import report
@@ -46,7 +47,7 @@ def status() -> dict:
 
 def _backup(p: Path) -> Path:
     report.ensure_home()
-    dst = report.HOME / "backup" / ("hosts.%s.bak" % __import__("time").strftime("%Y%m%d-%H%M%S"))
+    dst = report.HOME / "backup" / ("hosts.%s.bak" % time.strftime("%Y%m%d-%H%M%S"))
     shutil.copy2(p, dst)
     return dst
 
@@ -84,7 +85,8 @@ def apply(ips_by_domain: dict, confirmed: bool = False, flush: bool = False) -> 
         return {"ok": False, "channel": "hosts", "detail": "写入失败：%s" % exc}
     if flush and sys.platform == "win32":
         try:
-            subprocess.run(["ipconfig", "/flushdns"], capture_output=True)
+            subprocess.run(["ipconfig", "/flushdns"], capture_output=True,
+                           encoding="utf-8", errors="replace")
         except Exception:
             pass
     return {"ok": True, "channel": "hosts", "path": str(p), "backup": str(bak) if bak else None,
