@@ -1,13 +1,13 @@
 # mirror · 第三方转发
 
 ## 一、方式定义
-**换入口**：第三方转发代理池——把 GitHub URL 改写为镜像前缀转发（HTTP 读 + git 只读 clone/fetch）。实现：`channel_mirror.py`（源池=统一资源层 `sources/mirror/static/`，与资源层聚合器 `sources/mirror/app.py` 同口径：glob 全部 json + enabled 过滤）。
+**换入口**：第三方转发代理池——把 GitHub URL 改写为镜像前缀转发（HTTP 读 + git 只读 clone/fetch）。实现：`channel_mirror.py`（源池=统一资源层 `sources.json` 的 kinds.mirror 节，与资源层聚合器 `collect.py` 同口径）。
 
 ## 二、适合的情况
 直连与钉 IP 都失败时的**只读兜底**（raw / Release / clone）。写操作**永不**进本通道（见红线）。
 
 ## 三、内部降级链（细粒度）
-源池登记于资源层（`sources/mirror/static/*.json`，glob 全部合并）：社区主推 5 源 → 参考包当期实测收录 ~40 源（含延迟数据）→ 历史知名/换主机式若干——**共 67 源**（增删=编辑 json，失败≠失效）。
+源池登记于资源层（`sources.json` 的 kinds.mirror 节）：社区主推 5 源 → 参考包当期实测收录 ~40 源（含延迟数据）→ 历史知名/换主机式若干——**共 68 源**（含 nite07，2026-09-29 起与资源层管道统一口径；增删=编辑对应节，失败≠失效）。
 择路：账本热源直取 → **并发探活完成即用**（HTTP HEAD / git `ls-remote`——镜像对 git 的支持要用真协议探）→ 账本序兜底。失败只冷却、**永不删除**。
 
 ## 四、前提与副作用 / 红线

@@ -1,7 +1,7 @@
 """治理层常量（唯一事实源）。
 
-方式各自的**数据清单**已归位到资源层（sources/mirror/static/mirror.json、
-sources/cdn/static/cdn.json、IP 供给走 sources/hub.py）——本文件只保留跨方式共用的治理常量：
+方式各自的**数据清单**已归位到资源层（sources.json 的 kinds 各节，
+IP 供给走 sources/hub.py）——本文件只保留跨方式共用的治理常量：
 hosts 严格校验目标、并发探测参数、预算与连接超时。
 数值依据：2026-09-11 真机实测（6 域 IP 逐条拨测 / CDN·镜像池逐源验证）。
 """

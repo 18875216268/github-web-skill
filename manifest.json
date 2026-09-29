@@ -1,7 +1,7 @@
 {
   "name": "github-web-skill",
   "author": "木小匣",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "updated": "2026-09-29",
   "update": {
     "url": "https://github.com/18875216268/github-web-skill",
@@ -22,7 +22,7 @@
     {
       "id": "sources",
       "path": "sources/",
-      "role": "资源层（hub.py 统一调用入口 + speedtest.py 统一测速 + ip/mirror/cdn 三大类，纯外部源每次全新拉取）"
+      "role": "资源层（hub.py 统一入口 + collect.py 双模式聚合 + speedtest.py 统一测速；sources.json 唯一数据文件，纯外部源每次全新拉取）"
     },
     {
       "id": "channels",

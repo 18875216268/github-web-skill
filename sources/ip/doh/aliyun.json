@@ -1,6 +1,0 @@
-{
-  "name": "aliyun",
-  "enabled": true,
-  "url": "https://223.5.5.5/resolve",
-  "note": "阿里公共 DoH——绕过本地 DNS 污染的解析源。"
-}

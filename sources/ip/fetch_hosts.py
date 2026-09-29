@@ -1,7 +1,7 @@
 """获取方式①：hosts 清单源——HTTP 拉 hosts 文本 → 解析 → 候选映射。
 
-统一纪律（D15）：glob 自动发现本文件夹 *.json 实例 → 全部并发拉取 →
-单源失败跳过（tried 留痕）→ 聚合去重 → 交大类聚合器（app.py）。
+统一纪律（D15）：实例清单由 collect 注入（来自 sources.json 的 ways.hosts_file.sources）→
+全部并发拉取 → 单源失败跳过（tried 留痕）→ 聚合去重 → 交大类聚合器（collect.py）。
 解析容错：注释/# 行跳过、坏行忽略、`alive.` 前缀归一化、重复条目去重。
 """
 from __future__ import annotations
@@ -15,29 +15,17 @@ import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PKG = _HERE.parents[2]
+_PKG = _HERE.parents[1]
 for _p in (str(_PKG / "scripts"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import env_guard  # noqa: E402
 
+WAY = "hosts_file"
 HOSTS_LINE = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3})\s+(\S+)$")
 WORKERS = 8
 TIMEOUT = 10.0
-
-
-def instances() -> list:
-    """glob 发现全部启用实例（增源=放 json 即生效）。"""
-    out = []
-    for p in sorted(_HERE.glob("*.json")):
-        try:
-            d = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if d.get("enabled", True) and d.get("url"):
-            out.append(d)
-    return out
 
 
 def _pull(inst: dict) -> tuple:
@@ -64,12 +52,11 @@ def _pull(inst: dict) -> tuple:
     return inst["name"], got, "ok（%d 域）" % len(got)
 
 
-def collect() -> dict:
-    """并发拉取全部启用实例 → 扁平 entries（带源名，聚合归 app.py）。
+def collect(insts: list, domains: list | None = None) -> dict:
+    """并发拉取全部启用实例 → 扁平 entries（带源名，聚合归 collect.py）。
 
     返回 {ok, entries:[{ip, domain, source}], tried:[…]}。
     """
-    insts = instances()
     t0 = time.perf_counter()
     entries: list = []
     tried = []
@@ -94,4 +81,5 @@ def collect() -> dict:
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(json.dumps(collect(), ensure_ascii=False, indent=2))
+    node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
+    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or []), ensure_ascii=False, indent=2))

@@ -5,14 +5,14 @@
 
 ## 通道
 
-| 通道 | 经第三方 | 需授权 | 作用 | 实现与说明 |
-| --- | --- | --- | --- | --- |
-| `direct` | 否 | 否 | 默认首选：走官方端点与官方协议（git 元数据/整仓/推送、raw/api/codeload）。不改源、不改系统。 | `channels/direct/channel_direct.py`（README 含内部降级链） |
-| `cdn` | media-cdn | 否 | 只读单个文件：从媒体 CDN 边缘缓存取（并发探活择优；源池只增不删、失败只冷却）。 | `channels/cdn/channel_cdn.py`（README 含内部降级链） |
-| `pin` | 否 | 否 | 治解析污染与线路劣化：资源层供给 IP 候选（多源聚合+统一测速），单次调用内本地代理钉住；不改系统、进程结束即失效。 | `channels/pin/channel_pin.py`（README 含内部降级链） |
-| `hosts` | 否 | 是 | 兜底修系统解析（含浏览器）：标记块写入 hosts，需显式授权且必须可回滚。 | `channels/hosts/channel_hosts.py`（README 含内部降级链） |
-| `mirror` | mirror-pool | 否 | 只读兜底：直连与钉 IP 都失败时经第三方转发代理读取（写操作永不经过；并发探活择优、源池只增不删）。 | `channels/mirror/channel_mirror.py`（README 含内部降级链） |
-| `offline` | 否 | 否 | 不联网：给出离线预置与人工指引。 | 约定态（无实现文件） |
+| 通道 | 经第三方 | 需授权 | 消费供给 | 作用 | 实现与说明 |
+| --- | --- | --- | --- | --- | --- |
+| `direct` | 否 | 否 | — | 默认首选：走官方端点与官方协议（git 元数据/整仓/推送、raw/api/codeload）。不改源、不改系统。 | `channels/direct/channel_direct.py`（README 含内部降级链） |
+| `cdn` | media-cdn | 否 | `cdn` | 只读单个文件：从媒体 CDN 边缘缓存取（并发探活择优；源池只增不删、失败只冷却）。 | `channels/cdn/channel_cdn.py`（README 含内部降级链） |
+| `pin` | 否 | 否 | `ip` | 治解析污染与线路劣化：资源层供给 IP 候选（多源聚合+统一测速），单次调用内本地代理钉住；不改系统、进程结束即失效。 | `channels/pin/channel_pin.py`（README 含内部降级链） |
+| `hosts` | 否 | 是 | `ip` | 兜底修系统解析（含浏览器）：标记块写入 hosts，需显式授权且必须可回滚。 | `channels/hosts/channel_hosts.py`（README 含内部降级链） |
+| `mirror` | mirror-pool | 否 | `mirror` | 只读兜底：直连与钉 IP 都失败时经第三方转发代理读取（写操作永不经过；并发探活择优、源池只增不删）。 | `channels/mirror/channel_mirror.py`（README 含内部降级链） |
+| `offline` | 否 | 否 | — | 不联网：给出离线预置与人工指引。 | 约定态（无实现文件） |
 
 ## 场景路由（情况 × 方式矩阵）
 

@@ -14,9 +14,9 @@ from pathlib import Path
 import probe
 from channel_direct import http_get as _curl_get
 
-# 源池：统一资源层（sources/cdn/static/cdn.json——源与消费分离，D16/D22）
-SOURCES = json.loads((Path(__file__).resolve().parents[2] / "sources" / "cdn" / "static" / "cdn.json")
-                     .read_text(encoding="utf-8"))["sources"]
+# 源池：统一资源层（sources.json 的 kinds.cdn 节——源与消费分离，D16/D22）
+SOURCES = json.loads((Path(__file__).resolve().parents[2] / "sources" / "sources.json")
+                     .read_text(encoding="utf-8"))["kinds"]["cdn"]["sources"]
 SRCS = {s["name"]: s for s in SOURCES}
 
 
@@ -25,12 +25,16 @@ def build_urls(owner: str, repo: str, ref: str, path: str) -> list:
             for c in SOURCES]
 
 
-def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float) -> dict:
+def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float,
+          budget=None) -> dict:
     urls = build_urls(owner, repo, ref, path)
     names = [n for n, _ in urls]
     u = dict(urls)
     tried = []
     for name in probe.candidates(names, probe_pairs=list(urls)):
+        if budget is not None and not budget.can_attempt():
+            tried.append({"cdn": name, "ok": False, "detail": "预算不足，停止 CDN 降级"})
+            break
         r = _curl_get(u[name], dest, timeout)
         probe.record(name, bool(r["ok"]), float(r.get("elapsed", 0.0)) * 1000, r.get("detail", ""))
         tried.append({"cdn": name, "ok": r["ok"], "detail": r.get("detail")})
@@ -42,6 +46,8 @@ def fetch(owner: str, repo: str, ref: str, path: str, dest: Path, timeout: float
                 probe.record(name, False, 0.0, "内容校验不过：%s" % why)
                 tried[-1].update({"ok": False, "detail": "CDN 内容校验不过：%s" % why})
                 continue
+            if budget is not None:
+                budget.register_ok()
             return {"ok": True, "channel": "cdn", "via": name, "third_party": "media-cdn",
                     "elapsed": r["elapsed"], "detail": "%s <- %s" % (path, u[name]), "tried": tried}
     return {"ok": False, "channel": "cdn", "third_party": "media-cdn",
@@ -61,7 +67,7 @@ def http_get(raw_url: str, dest: Path, timeout: float, budget=None) -> dict:
     if not m:
         return {"ok": False, "channel": "cdn", "third_party": "media-cdn", "elapsed": 0.0,
                 "detail": "CDN 仅适用 raw 形式的单文件（当前链接非 raw）"}
-    return fetch(m.group(1), m.group(2), m.group(3), m.group(4), dest, timeout)
+    return fetch(m.group(1), m.group(2), m.group(3), m.group(4), dest, timeout, budget=budget)
 
 
 def git_run(args: list, cwd: str | None, timeout: float, budget=None) -> dict:

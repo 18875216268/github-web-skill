@@ -1,8 +1,8 @@
 """获取方式③：GitHub 官方 IP 段（安全闸数据源）——拉官方 CIDR 段，供候选 ∈ 段校验。
 
-一视同仁（D17）：普通获取方式，glob 发现实例、失败跳过（tried 留痕）——官方端点不可达时
-本方式产出为空，hub 跳过段过滤（不阻塞主流程）。
-产出特殊：{"kind": "meta", "cidrs": ["x.x.x.x/y", …]}（非 {domain:[ip]}——消费方是 hub 的过滤器）。
+一视同仁（D17）：普通获取方式，实例清单由 collect 注入、失败跳过（tried 留痕）——
+官方端点不可达时本方式产出为空，hub 跳过段过滤（不阻塞主流程）。
+产出特殊：{"cidrs": ["x.x.x.x/y", …]}（非 entries——消费方是 collect 的官方段旁路 meta）。
 """
 from __future__ import annotations
 
@@ -12,33 +12,22 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_PKG = _HERE.parents[2]
+_PKG = _HERE.parents[1]
 for _p in (str(_PKG / "scripts"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import env_guard  # noqa: E402
 
+WAY = "gh_meta"
 TIMEOUT = 8.0
 
 
-def instances() -> list:
-    out = []
-    for p in sorted(_HERE.glob("*.json")):
-        try:
-            d = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if d.get("enabled", True) and d.get("url"):
-            out.append(d)
-    return out
-
-
-def collect() -> dict:
+def collect(insts: list, domains: list | None = None) -> dict:
     """拉官方 meta → 合并全部 CIDR 段。返回 {ok, cidrs:[…], tried:[…]}。"""
     tried = []
     cidrs: list = []
-    for inst in instances():
+    for inst in insts:
         args = env_guard.curl_base(TIMEOUT) + ["-fsSL", inst["url"]]
         try:
             p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -59,4 +48,5 @@ def collect() -> dict:
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(json.dumps(collect(), ensure_ascii=False, indent=2))
+    node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
+    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or []), ensure_ascii=False, indent=2))

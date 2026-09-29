@@ -1,15 +1,18 @@
 ---
 name: github-web-skill
+version: "2.2.0"
+display_name: "访问GitHub网络"
+display_name_en: "GitHub Access Layer"
 description: "访问GitHub网络（GitHub 访问层，分场景通道路由）：访问 GitHub 失败时自动逐级降级并如实报告——直连 → 钉 IP → hosts 兜底 → 第三方镜像 → CDN 单文件。当出现 git clone / pull / push 失败、raw 或 Release 下载不动、github.com 打不开、需要「配置 GitHub 加速」、或需要按场景稳定取 GitHub 仓库与文件时使用。也适用于「公司网络访问不了 GitHub」「DNS 污染」「代理环境变量导致命令失败」这类现场。"
+description_zh: "访问GitHub网络（GitHub 访问层，分场景通道路由）：访问 GitHub 失败时自动逐级降级并如实报告——直连 → 钉 IP → hosts 兜底 → 第三方镜像 → CDN 单文件。当出现 git clone / pull / push 失败、raw 或 Release 下载不动、github.com 打不开、需要「配置 GitHub 加速」、或需要按场景稳定取 GitHub 仓库与文件时使用。也适用于「公司网络访问不了 GitHub」「DNS 污染」「代理环境变量导致命令失败」这类现场。"
+description_en: "GitHub access layer with scenario-based channel routing: automatic failover with honest reporting (direct → pinned-IP → hosts → third-party mirror → CDN). Use when git clone/pull/push fails, raw or Release downloads stall, github.com is unreachable, DNS is poisoned, or proxy env vars break commands."
 license: "MIT"
-compatibility: "需要 Python 3.10+（仅标准库）与系统 git/curl；需要出网（GitHub 官方端点、媒体 CDN、第三方镜像池、公共 DoH、外部 hosts 清单源与官方段闸——全部登记于资源层 sources/）；hosts 通道需管理员权限。"
+compatibility: "需要 Python 3.10+（仅标准库）与系统 git/curl；需要出网（GitHub 官方端点、媒体 CDN、第三方镜像池、公共 DoH、外部 hosts 清单源与官方段闸——全部登记于资源层 sources.json）；hosts 通道需管理员权限。"
 metadata:
-  display_name: "访问GitHub网络"
   author: "木小匣"
-  version: "2.1.0"
   update_url: "https://github.com/18875216268/github-web-skill"
   update_policy: "仅显式调用 gh.py update 时检测/下载；本技能从不自检更新（无后台/定时检查）"
-  architecture: "routes(总路由) + sources(资源层 hub/speedtest) + channels(方式目录) + scripts(governance: budget/env_guard/report/probe/lines) + update(更新层，仅显式)"
+  architecture: "routes(总路由) + sources(资源层 hub/collect/speedtest) + channels(方式目录) + scripts(governance: budget/env_guard/report/probe/lines) + update(更新层，仅显式)"
   date: "2026-09-29"
 ---
 
@@ -54,8 +57,10 @@ metadata:
 
 ```
 ① 路由层  routes/routes.json（事实源）→ ROUTES.md（渲染产物）；gh.py routes --check 校验
-② 资源层    sources/（★v2.0.0：纯外部源，每次全新拉取——hub.py 统一调用入口，speedtest.py 统一测速；
-          三大类：ip（hosts_file/doh/gh_meta 获取方式）· mirror（登记 67）· cdn（13）；增删源=放 json）
+② 资源层    sources/（★v2.2.0：纯外部源，每次全新拉取——hub.py 统一入口 + collect.py 双模式聚合
+          （登记型/fetch 驱动型，数据分派）+ speedtest.py 统一测速（策略数据声明）；
+          sources.json 唯一数据文件：ip（获取方式 hosts_file/doh/gh_meta）· mirror（登记 68）· cdn（13）；
+          增删源=编辑对应节，通道消费声明见 routes.json 的 kinds）
 ③ 通道层  channels/（6 条通道，**一方式一文件夹**：实现 + README 内部降级链说明；互不知道对方存在）——
           pin/hosts 为**纯应用通道**（零获取逻辑，消费资源层供给）
 ④ 治理层  scripts/（CLI 为 gh.py + 预算 budget · 环境守卫 env_guard · 报告 report · 并发探测与源账本 probe · 常量 lines）——所有通道共用，通道不得绕过
@@ -144,7 +149,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 - `cdn` 只读且不替代 git；分支引用可能滞后，请用 tag/commit 固定。
 - `mirror` / `cdn` 是第三方入口，可用性会漂移；**源池只增不删**——不可达只冷却（指数退避、封顶 1h），
   到期自动重试；择路靠并发探活 + 用户区健康账本，不承诺某条源永远可用，但承诺"换源继续试"。
-  收录标准：社区公认、被广泛引用（调研清单与出处见 `sources/mirror/static/mirror.json` 与 README——本包自包含）。
+  收录标准：社区公认、被广泛引用（调研清单与出处见 `sources.json` 的 kinds.mirror 节与 README——本包自包含）。
 - `pin` 的 IP 候选全部来自资源层（`sources/hub.py` 多源聚合+统一测速，每次全新拉取）；IP 可用性随时间漂移，故逐 IP failover。
 - `hosts` 需要管理员权限；本 Skill 不会静默改系统（无 `--yes` 必拒绝），并保留备份供回滚。
 - **更新**：仅当你显式执行 `gh.py update ...` 时才出网检测/下载（更新地址 `https://github.com/18875216268/github-web-skill`）；

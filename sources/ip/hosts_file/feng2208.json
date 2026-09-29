@@ -1,6 +1,0 @@
-{
-  "name": "feng2208",
-  "enabled": false,
-  "url": "https://raw.githubusercontent.com/feng2208/github-hosts/main/hosts",
-  "note": "feng2208/github-hosts：2026-09-29 实测 404（清单路径待查证，README 未给出确切 raw 路径）——保留候选，路径确认后改回 enabled。"
-}

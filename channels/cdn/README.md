@@ -1,7 +1,7 @@
 # cdn · CDN 缓存
 
 ## 一、方式定义
-**换内容来源**：从媒体 CDN 的边缘缓存读**单个文件**（源还是 GitHub 仓库，只是读的是 CDN 缓存副本）。实现：`channel_cdn.py`（源池=统一资源层 `sources/cdn/static/`，与资源层聚合器 `sources/cdn/app.py` 同口径）。
+**换内容来源**：从媒体 CDN 的边缘缓存读**单个文件**（源还是 GitHub 仓库，只是读的是 CDN 缓存副本）。实现：`channel_cdn.py`（源池=统一资源层 `sources.json` 的 kinds.cdn 节，与资源层聚合器 `collect.py` 同口径）。
 
 ## 二、适合的情况
 只读**单个文件**（manifest / README / 小配置）——"取单文件"场景链的**首选**（快）。

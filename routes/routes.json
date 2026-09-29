@@ -6,36 +6,42 @@
       "file": "channels/direct/channel_direct.py",
       "third_party": false,
       "needs_confirm": false,
+      "kinds": [],
       "role": "默认首选：走官方端点与官方协议（git 元数据/整仓/推送、raw/api/codeload）。不改源、不改系统。"
     },
     "cdn": {
       "file": "channels/cdn/channel_cdn.py",
       "third_party": "media-cdn",
       "needs_confirm": false,
+      "kinds": ["cdn"],
       "role": "只读单个文件：从媒体 CDN 边缘缓存取（并发探活择优；源池只增不删、失败只冷却）。"
     },
     "pin": {
       "file": "channels/pin/channel_pin.py",
       "third_party": false,
       "needs_confirm": false,
+      "kinds": ["ip"],
       "role": "治解析污染与线路劣化：资源层供给 IP 候选（多源聚合+统一测速），单次调用内本地代理钉住；不改系统、进程结束即失效。"
     },
     "hosts": {
       "file": "channels/hosts/channel_hosts.py",
       "third_party": false,
       "needs_confirm": true,
+      "kinds": ["ip"],
       "role": "兜底修系统解析（含浏览器）：标记块写入 hosts，需显式授权且必须可回滚。"
     },
     "mirror": {
       "file": "channels/mirror/channel_mirror.py",
       "third_party": "mirror-pool",
       "needs_confirm": false,
+      "kinds": ["mirror"],
       "role": "只读兜底：直连与钉 IP 都失败时经第三方转发代理读取（写操作永不经过；并发探活择优、源池只增不删）。"
     },
     "offline": {
       "file": null,
       "third_party": false,
       "needs_confirm": false,
+      "kinds": [],
       "role": "不联网：给出离线预置与人工指引。"
     }
   },

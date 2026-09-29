@@ -29,6 +29,7 @@ sys.path.insert(0, str(SCRIPTS))
 sys.dont_write_bytecode = True
 
 from _harness import check, finish        # noqa: E402
+import _harness                           # noqa: E402
 import channel_cdn                        # noqa: E402
 import channel_direct                     # noqa: E402
 import channel_hosts                      # noqa: E402
@@ -41,13 +42,7 @@ import lines                              # noqa: E402
 
 def _load_src(name: str, rel: str):
     """按包相对路径加载资源层模块（sources/ 无包结构，路径加载）。"""
-    import importlib.util
-    p = PKG / rel
-    spec = importlib.util.spec_from_file_location("tsrc_" + name, p)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return _harness.load_module(name, PKG / rel)
 
 SKILL = (PKG / "SKILL.md").read_text(encoding="utf-8")
 FM = SKILL.split("---")[1] if SKILL.startswith("---") else ""
@@ -99,11 +94,17 @@ def main() -> int:
     vals = list(meta.values())
     check("A6 metadata 全为字符串值（引号包裹）",
           bool(vals) and all(v.startswith('"') and v.endswith('"') for v in vals), vals)
+    check("A6b 平台 schema：version/display_name/display_name_en/description_zh/description_en 顶层齐备",
+          all(fm(k) for k in ("version", "display_name", "display_name_en",
+                              "description_zh", "description_en")),
+          {k: fm(k) for k in ("version", "display_name", "display_name_en")})
     check("A7 SKILL.md 正文 < 500 行（渐进披露）", len(SKILL.splitlines()) < 500, len(SKILL.splitlines()))
     lic = PKG / "LICENSE"
     check("A9 发布件齐全：LICENSE 文件存在且为 MIT（与 frontmatter 声明一致）",
           lic.exists() and "MIT License" in lic.read_text(encoding="utf-8"), fm("license"))
     _tmp = None
+    PLATFORM_FIELDS = {"version", "display_name", "display_name_en",
+                       "description_zh", "description_en"}
     try:
         _tmp = Path(tempfile.mkdtemp(prefix="gh_spec_"))
         _pkg = _tmp / (name or PKG.name)          # 规范名（挂载态目录名≠资产名，校验须按规范名）
@@ -112,14 +113,31 @@ def main() -> int:
                            capture_output=True, text=True, timeout=120,
                            encoding="utf-8", errors="replace")
         out = (r.stdout or "") + (r.stderr or "")
-        check("A8 官方 skills-ref validate 通过（规范形态 SKILL.md）",
-              r.returncode == 0 and "Valid skill" in out, out[:160])
+        # A8 守门语义：WorkBuddy 平台要求的顶层扩展字段会被官方校验器拒绝——双规范并存的有意取舍；
+        # 除这些已知平台字段外，任何其他违规仍视为失败。校验器输出可能被终端宽度折行 → 先折叠空白。
+        flat = re.sub(r"\s+", " ", out)
+        unexpected = set()
+        for chunk in re.findall(r"Unexpected fields in frontmatter:\s*(.+?)\. Only\b", flat):
+            unexpected |= {f.strip() for f in chunk.split(",") if f.strip()}
+        others = re.sub(r"Unexpected fields in frontmatter:\s*.+?are allowed\.", "", flat)
+        real = [s for s in (x.strip() for x in others.split("- "))
+                if s and not s.startswith("Validation failed for")]
+        check("A8 官方 skills-ref validate：除平台扩展字段外零违规（双规范并存取舍）",
+              not (unexpected - PLATFORM_FIELDS) and not real,
+              {"unexpected": sorted(unexpected - PLATFORM_FIELDS), "others": real[:5]})
     except Exception as exc:
         check("A8 官方 skills-ref validate 通过（规范形态 SKILL.md）", True,
               "未安装 skills_ref，跳过：%s" % str(exc)[:60])
     finally:
         if _tmp:
             shutil.rmtree(_tmp, ignore_errors=True)
+    # A8a（本地稳定守门，不依赖外部 CLI）：frontmatter 顶层键 ⊆ 官方白名单 ∪ 平台扩展字段
+    ALLOWED_KEYS = {"allowed-tools", "compatibility", "description", "license", "metadata", "name"}
+    top_keys = {ln.split(":")[0].strip() for ln in FM.splitlines()
+                if ln and not ln.startswith((" ", "\t", "-")) and ":" in ln}
+    check("A8a frontmatter 顶层键 ⊆ 官方白名单 ∪ 平台扩展字段",
+          top_keys <= ALLOWED_KEYS | PLATFORM_FIELDS,
+          sorted(top_keys - ALLOWED_KEYS - PLATFORM_FIELDS))
 
     # ---------------- B 文档↔代码 ----------------
     expect = {"direct": ["http_get", "git_run"], "cdn": ["fetch", "build_urls"],
@@ -158,28 +176,27 @@ def main() -> int:
     check("B6 manifest.layers 路径全部存在",
           all((PKG / l["path"]).exists() for l in man["layers"]),
           [l["path"] for l in man["layers"] if not (PKG / l["path"]).exists()])
-    check("B6b manifest.version == frontmatter metadata.version",
-          man["version"] == meta.get("version", "").strip('"'), "%s / %s" % (man["version"], meta.get("version")))
+    check("B6b manifest.version == frontmatter version（顶层）",
+          man["version"] == (fm("version") or ""), "%s / %s" % (man["version"], fm("version")))
 
     doms = set()
-    ip_domains = json.loads((PKG / "sources" / "ip" / "domains.json").read_text(encoding="utf-8"))["domains"]
     for c in channel_cdn.SOURCES:
         doms.add(re.sub(r"^https?://", "", c["url"]).split("/")[0])
     for m in channel_mirror.SOURCES:
         doms.add(re.sub(r"^https?://", "", m["url"]).split("/")[0])
-    # 资源层（sources/）：全部源 json 的 url 域 + 全量域清单（hub --endpoints 同口径）
-    for jf in (PKG / "sources").rglob("*.json"):
-        try:
-            data = json.loads(jf.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        items = data.get("sources") if isinstance(data, dict) and "sources" in data else (
-            [data] if isinstance(data, dict) and data.get("url") else [])
-        for it in items or []:
+    # 资源层：sources.json 各节 url 域 + 全量探测域清单（hub --endpoints 同口径）
+    sdata = json.loads((PKG / "sources" / "sources.json").read_text(encoding="utf-8"))
+    for node in sdata["kinds"].values():
+        for way in (node.get("ways") or {}).values():
+            for it in (way or {}).get("sources") or []:
+                u = str(it.get("url") or "")
+                if u:
+                    doms.add(re.sub(r"^https?://", "", u).split("/")[0])
+        for it in node.get("sources") or []:
             u = str(it.get("url") or "")
             if u:
                 doms.add(re.sub(r"^https?://", "", u).split("/")[0])
-    doms |= set(ip_domains)
+        doms |= set(node.get("domains") or [])
     allow = set(man["network"]["allow_domains"])
     check("B7 manifest 网络声明覆盖全部出网域（资源层三节+全量域清单）",
           doms <= allow, sorted(doms - allow))
@@ -197,7 +214,8 @@ def main() -> int:
     # ---------------- C 代码↔代码 ----------------
     bad = []
     for f in (list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py"))
-              + list((PKG / "channels").glob("*/*.py")) + list((PKG / "channels").glob("*/*/*.py"))):
+              + list((PKG / "channels").glob("*/*.py")) + list((PKG / "channels").glob("*/*/*.py"))
+              + list((PKG / "sources").rglob("*.py")) + list((PKG / "update").glob("*.py"))):
         try:
             compile(f.read_text(encoding="utf-8"), str(f), "exec")   # 纯内存语法编译：不落字节码
         except SyntaxError as exc:
@@ -254,7 +272,7 @@ def main() -> int:
           and "raw.githubusercontent.com" in getattr(lines, "STRICT_PROBE_URLS", {}), None)
 
     # D7 外部清单源（资源层 hosts_file）：失败不抛出、返回空（多源容错纪律）
-    hfm = _load_src("hf", "sources/ip/hosts_file/fetch.py")
+    hfm = _load_src("hf", "sources/ip/fetch_hosts.py")
     name, got, detail = hfm._pull({"name": "t", "url": "https://127.0.0.1:1/hosts"})
     check("D7 外部清单源：失败不抛出、返回空", got == {} and "失败" in detail, detail)
     check("D7b hosts 行解析：标准行命中、坏行忽略",

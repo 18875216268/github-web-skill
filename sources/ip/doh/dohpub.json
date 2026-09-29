@@ -1,7 +1,0 @@
-{
-  "name": "dohpub",
-  "enabled": true,
-  "url": "https://doh.pub/dns-query",
-  "style": "dns_query",
-  "note": "腾讯 DNSPod DoH（域名形式）——国内最常用的公共 DoH 之一。"
-}

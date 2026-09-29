@@ -27,6 +27,16 @@ def check(name: str, cond, detail="") -> bool:
     return ok
 
 
+def load_module(name: str, path):
+    """按文件路径加载模块（资源层/更新层无包结构，tests 共用此规则）。"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tsrc_" + name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def finish(title: str) -> int:
     bad = [n for n, ok in _RESULT if not ok]
     print("== %s：%d/%d 通过 ==" % (title, len(_RESULT) - len(bad), len(_RESULT)))

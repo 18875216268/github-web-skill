@@ -23,7 +23,8 @@ PKG = TESTS.parent
 SCRIPTS = PKG / "scripts"
 CHANNELS = PKG / "channels"
 PY_FILES = (list(SCRIPTS.glob("*.py")) + list(TESTS.glob("*.py"))
-            + list(CHANNELS.glob("*/*.py")))          # 治理层 + 测试 + 全部方式实现
+            + list(CHANNELS.glob("*/*.py"))
+            + list((PKG / "sources").rglob("*.py")))   # 治理层 + 测试 + 全部方式实现 + 资源层
 HOME = Path(tempfile.mkdtemp(prefix="gh_quality_home_"))
 os.environ["GH_ACCESS_HOME"] = str(HOME)
 sys.path.insert(0, str(TESTS))
@@ -85,18 +86,20 @@ def main() -> int:
     check("Q4 无开发残留物（.bak 除外：hosts 回滚备份；__pycache__/.pyc 属运行时产物，导出发布时检查）",
           not junk, junk)
 
-    # Q5 调试残留（print 仅合法于 report.py 的输出层与 tests 的 PASS/FAIL 接口；无断点调试器）
+    # Q5 调试残留（print 仅合法于 report.py 输出层、资源层诊断 CLI 的 __main__、tests 接口；无断点调试器）
     bad = []
     for p in [x for x in PY_FILES if x.parent.name != "tests"]:
         src = p.read_text(encoding="utf-8")
-        if p.name != "report.py" and re.search(r"(?<![\w.])print\(", src):
+        cli_ok = p.name in ("report.py", "hub.py", "collect.py", "speedtest.py",
+                            "fetch_hosts.py", "fetch_doh.py", "fetch_ghmeta.py")
+        if not cli_ok and re.search(r"(?<![\w.])print\(", src):
             bad.append("%s: print(" % p.name)
         if re.search(r"\bbreakpoint\(|\bpdb\b", src):
             bad.append("%s: 调试器残留" % p.name)
     for p in TESTS.glob("*.py"):
         if p.resolve() != SELF and re.search(r"\bbreakpoint\(", p.read_text(encoding="utf-8")):
             bad.append("%s: breakpoint(" % p.name)
-    check("Q5 无调试残留（scripts 内仅 report.py 可 print；无 breakpoint/pdb）", not bad, bad)
+    check("Q5 无调试残留（print 仅合法于 report.py 与资源层诊断 CLI；无 breakpoint/pdb）", not bad, bad)
 
     # Q6 未使用 import
     bad = []
@@ -161,7 +164,7 @@ def main() -> int:
             if "YYYY" in p or p.endswith(".jsonl"):     # 运行时模板（日志名等），非随包文件
                 continue
             if p.startswith(("./", "../")) or "/../" in p:
-                # 相对引用：解析后仍在包内 = 合法（如 sources/ip/doh/ → ../domains.json）
+                # 相对引用：解析后仍在包内 = 合法（如 sources/ip/fetch_doh.py 对 sources.json 的引用）
                 try:
                     inside = (rel.parent / p).resolve().is_relative_to(PKG.resolve())
                 except Exception:

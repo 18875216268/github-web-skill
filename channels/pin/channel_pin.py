@@ -209,11 +209,11 @@ class PinProxy:
             pass
 
 
-def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
-    """逐 IP 实测可达性（判据：服务器有 HTTP 响应即视为可达；不做性能结论）。
+def _probe_ips(pairs: list, timeout: float, strict: dict) -> dict:
+    """逐 IP 并发探测公共件：返回 {domain: [ip 按延迟升序]}。
 
-    **并发探测**（完成即收集，按探测延迟升序返回全部存活者）；
-    用途：改 hosts 之前必须过这一关——不把"没验证过的 IP"写进系统解析。
+    strict 中的域：真实取 1 字节内容（`-r 0-0`）且要 2xx（严格判据）；
+    其余域：根路径有 HTTP 响应即视为可达（弱判据）。完成即收集（probe.race）。
     """
     import os as _os
     import subprocess as _sp
@@ -222,18 +222,23 @@ def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
     devnull = "NUL" if _os.name == "nt" else "/dev/null"
 
     def one(domain: str, ip: str) -> dict:
-        args = env_guard.curl_base(timeout) + [
-            "-o", devnull, "-w", "%{http_code}",
-            "--resolve", "%s:443:%s" % (domain, ip), "https://%s/" % domain]
+        if domain in strict:
+            args = env_guard.curl_base(timeout) + [
+                "-r", "0-0", "-o", devnull, "-w", "%{http_code}",
+                "--resolve", "%s:443:%s" % (domain, ip), strict[domain]]
+        else:
+            args = env_guard.curl_base(timeout) + [
+                "-o", devnull, "-w", "%{http_code}",
+                "--resolve", "%s:443:%s" % (domain, ip), "https://%s/" % domain]
         try:
             p = _sp.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
                         env=env_guard.clean_env(), timeout=timeout + 4)
-        except Exception as exc:
-            return {"ok": False, "detail": str(exc)[:60]}
+        except Exception:
+            return {"ok": False}
         code = ((p.stdout or "000").strip().splitlines() or ["000"])[-1]
-        return {"ok": code != "000", "code": code}
+        ok = code.startswith("2") if domain in strict else code != "000"
+        return {"ok": ok}
 
-    pairs = [(d, ip) for d, ips in hosts.items() for ip in (ips or [])[:limit]]
     alive = {}
     for key, ok, _val, ms in _probe.race([("%s|%s" % (d, ip), (lambda d=d, ip=ip: one(d, ip)))
                                           for d, ip in pairs]):
@@ -241,6 +246,16 @@ def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
             d, ip = key.split("|")
             alive.setdefault(d, []).append((ip, ms))
     return {d: [ip for ip, _ in sorted(v, key=lambda x: x[1])] for d, v in alive.items()}
+
+
+def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
+    """逐 IP 实测可达性（判据：服务器有 HTTP 响应即视为可达；不做性能结论）。
+
+    **并发探测**（完成即收集，按探测延迟升序返回全部存活者）；
+    用途：改 hosts 之前必须过这一关——不把"没验证过的 IP"写进系统解析。
+    """
+    pairs = [(d, ip) for d, ips in hosts.items() for ip in (ips or [])[:limit]]
+    return _probe_ips(pairs, timeout, strict={})
 
 
 def verify_for_hosts(hosts: dict, limit: int = 2, timeout: float = 6.0) -> dict:
@@ -256,35 +271,8 @@ def verify_for_hosts(hosts: dict, limit: int = 2, timeout: float = 6.0) -> dict:
     if rest:
         out.update(verify_ips(rest, limit=limit, timeout=timeout))
     pairs = [(d, ip) for d, ips in hosts.items() if d in strict for ip in (ips or [])[:limit]]
-    if not pairs:
-        return out
-
-    import os as _os
-    import subprocess as _sp
-
-    import probe as _probe
-    devnull = "NUL" if _os.name == "nt" else "/dev/null"
-
-    def one(domain: str, ip: str) -> dict:
-        args = env_guard.curl_base(timeout) + [
-            "-r", "0-0", "-o", devnull, "-w", "%{http_code}",
-            "--resolve", "%s:443:%s" % (domain, ip), strict[domain]]
-        try:
-            p = _sp.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                        env=env_guard.clean_env(), timeout=timeout + 4)
-        except Exception as exc:
-            return {"ok": False, "detail": str(exc)[:60]}
-        code = ((p.stdout or "000").strip().splitlines() or ["000"])[-1]
-        return {"ok": code.startswith("2"), "code": code}
-
-    alive = {}
-    for key, ok, _val, ms in _probe.race([("%s|%s" % (d, ip), (lambda d=d, ip=ip: one(d, ip)))
-                                          for d, ip in pairs]):
-        if ok:
-            d, ip = key.split("|")
-            alive.setdefault(d, []).append((ip, ms))
-    for d, v in alive.items():
-        out[d] = [ip for ip, _ in sorted(v, key=lambda x: x[1])]
+    if pairs:
+        out.update(_probe_ips(pairs, timeout, strict=strict))
     return out
 
 

@@ -364,7 +364,8 @@ def cmd_diag(args) -> int:
         # 并发探活（完成即记录，一次列全）：镜像池 + CDN 域的事实与探活耗时
         # 未通过者同样列出（**失败 ≠ 失效**：只冷却，不删除）
         mres = probe.race_http([(s["name"], s["url"] + "/" + ref_url)
-                                for s in _CH["mirror"].SOURCES if "http" in s["caps"]])
+                                for s in _CH["mirror"].SOURCES
+                                if s.get("enabled", True) and "http" in s["caps"]])
         checks["mirror_probe"] = {k: {"ok": ok, "ms": round(ms)} for k, ok, ms, _d in mres}
         cres = probe.race_http(_CH["cdn"].build_urls(
             DIAG_PROBE["repo"].split("/")[0], DIAG_PROBE["repo"].split("/")[1],
@@ -407,11 +408,14 @@ def render_routes(routes: dict) -> str:
     out = ["# 通道与场景路由（自动生成：改 routes/routes.json 后跑 gh.py routes --render）", "",
            "> 说明：只讲每条通道「适合什么 / 作用是什么 / 前提与副作用」；不做性能评比。",
            "> 每条通道的**内部降级链**（源池/择路/超时）见其方式目录 README：`channels/<通道名>/README.md`。", "",
-           "## 通道", "", "| 通道 | 经第三方 | 需授权 | 作用 | 实现与说明 |", "| --- | --- | --- | --- | --- |"]
+           "## 通道", "", "| 通道 | 经第三方 | 需授权 | 消费供给 | 作用 | 实现与说明 |",
+           "| --- | --- | --- | --- | --- | --- |"]
     for name, c in routes["channels"].items():
         impl = ("`%s`（README 含内部降级链）" % c["file"]) if c.get("file") else "约定态（无实现文件）"
-        out.append("| `%s` | %s | %s | %s | %s |" % (
-            name, c["third_party"] or "否", "是" if c["needs_confirm"] else "否", c["role"], impl))
+        kinds = "、".join("`%s`" % k for k in (c.get("kinds") or [])) or "—"
+        out.append("| `%s` | %s | %s | %s | %s | %s |" % (
+            name, c["third_party"] or "否", "是" if c["needs_confirm"] else "否", kinds,
+            c["role"], impl))
     out += ["", "## 场景路由（情况 × 方式矩阵）", "",
             "> 情况决定方式序列；方式内部还有各自的源级降级链（见各方式目录 README）。", "",
             "| 情况（场景） | 说明 | 方式降级链 | 入口命令 |", "| --- | --- | --- | --- |"]
@@ -445,6 +449,23 @@ def cmd_routes(args) -> int:
     for p in (PKG / "channels").glob("*/channel_*.py"):
         if str(p.resolve()) not in registered:   # 统一转 str 再比对（Path 对象与 str 集合不可直接比较）
             problems.append("channels/ 下存在未注册的通道实现：%s" % p.relative_to(PKG))
+    # 通道↔供给对账：kinds 消费声明 ⊆ sources.json 注册表（正向硬校验）；反向未消费 = 软提示
+    try:
+        src_kinds = set(json.loads((PKG / "sources" / "sources.json")
+                                   .read_text(encoding="utf-8"))["kinds"])
+    except Exception as exc:
+        problems.append("sources.json 读取失败：%s" % exc)
+        src_kinds = set()
+    for name, c in routes["channels"].items():
+        declared = c.get("kinds")
+        if declared is None:
+            problems.append("通道 %s 缺 kinds 消费声明（新 schema 必填）" % name)
+            continue
+        unknown = set(declared) - src_kinds
+        if unknown:
+            problems.append("通道 %s 声明了不存在的供给大类 %s" % (name, sorted(unknown)))
+    consumed = {k for c in routes["channels"].values() for k in (c.get("kinds") or [])}
+    unconsumed = sorted(src_kinds - consumed)
     rendered = render_routes(routes)
     if args.render:
         ROUTES_MD.write_text(rendered, encoding="utf-8")
@@ -452,8 +473,10 @@ def cmd_routes(args) -> int:
     drift = (not ROUTES_MD.exists()) or ROUTES_MD.read_text(encoding="utf-8") != rendered
     if drift:
         problems.append("ROUTES.md 与 routes.json 不一致（跑 gh.py routes --render 重绘）")
-    return finish({"action": "routes.check", "ok": not problems,
-                   "detail": "；".join(problems) if problems else "通道与场景链全部有效"},
+    detail = "；".join(problems) if problems else "通道与场景链全部有效"
+    if not problems and unconsumed:
+        detail += "；软提示：供给大类无消费者 %s" % unconsumed
+    return finish({"action": "routes.check", "ok": not problems, "detail": detail},
                   args.quiet)
 
 
@@ -479,19 +502,19 @@ def cmd_update(args) -> int:
             dest.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
+        local = update_mod.local_version(PKG)     # 本地版本本地可得——失败分支也如实报告
         tried = []
         r = _http_via_chain(url, dest, chain, bud, routes, tried)
         if not r:
             return finish({"action": "update.check", "ok": False, "url": url, "ref": ref,
-                           "detail": "无法获取远端版本信息", "tried": tried,
+                           "local": local, "detail": "无法获取远端版本信息", "tried": tried,
                            "next": "gh.py diag 看环境事实；稍后重试 gh.py update --check"}, args.quiet)
         try:
             remote = update_mod.manifest_bytes_version(dest.read_bytes())
         except Exception as e:
             return finish({"action": "update.check", "ok": False, "url": url, "ref": ref,
-                           "detail": "远端 manifest 解析失败：%s" % e,
+                           "local": local, "detail": "远端 manifest 解析失败：%s" % e,
                            "next": "确认仓库内 main 分支存在合法 manifest.json"}, args.quiet)
-        local = update_mod.local_version(PKG)
         c = update_mod.compare(local, remote)
         if c > 0:
             detail, nxt = "有新版本 %s → %s" % (local, remote), "gh.py update --apply --yes"

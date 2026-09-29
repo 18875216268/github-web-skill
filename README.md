@@ -13,7 +13,7 @@
 
 - **方式目录化（v2.0.0）**：`channels/<通道名>/` 一方式一文件夹（实现 + 源清单 + README 内部降级链说明）——新增/删除方式只需「放文件 + `routes.json` 注册一行」，`gh.py` 按注册表动态加载，零代码改动。
 - **分场景通道路由**：`routes/routes.json` 是唯一事实源，`ROUTES.md` 为渲染产物（含情况×方式矩阵）；`gh.py routes --check` 校验（含注册表双向完整性）、`--render` 重绘。
-- **统一资源层**（v2.0.0）：`sources/` 纯外部源、每次全新拉取——IP 源（hosts 清单源 ×8 + DoH ×5 + 官方段安全闸）、镜像源（登记 67）、CDN 源（13）；`hub.py` 并发获取 → `speedtest.py` 统一测速 → 各大类 Top10；增删源 = 放 json 即生效。
+- **统一资源层**（v2.2.0）：`sources/` 纯外部源、每次全新拉取——`sources.json` 唯一数据文件（`collect.py` 双模式聚合：登记型/fetch 驱动型；测速策略数据声明）——IP 源（hosts 清单源 ×8 + DoH ×5 + 官方段安全闸）、镜像源（登记 68）、CDN 源（13）；增删源 = 编辑对应节。
 - **并发择优**：镜像 / CDN / 候选 IP 全部并发探活（完成即用），单条 4s 快速判不通、立即换源；热源命中时零探测开销。
 - **失败 ≠ 失效**：源池只增不删——不可达只按指数退避冷却（封顶 1h、到期自动半开重试），由用户区健康账本排序择路。
 - **通道可选/可排除**：`--force <通道>` 只走单道；`--exclude ch1,ch2` 裁剪降级链（如"不要经第三方"）；两者互斥。pin/hosts 为**纯应用通道**（零获取逻辑，消费资源层供给）。
@@ -53,8 +53,8 @@ github-web-skill/
 ├── README.md           # 本文件（人读）
 ├── LICENSE             # MIT
 ├── routes/             # routes.json（事实源）+ ROUTES.md（渲染产物）
-├── sources/            # ★资源层：纯外部源，每次全新拉取（hub.py 统一入口 + speedtest.py 统一测速
-│                       #   + ip/[app.py, domains.json, hosts_file/, doh/, gh_meta/] + mirror/ + cdn/）
+├── sources/            # ★资源层：纯外部源，每次全新拉取（hub.py + collect.py 双模式聚合 + speedtest.py；
+│                       #   sources.json 唯一数据文件 + ip/[fetch_hosts, fetch_doh, fetch_ghmeta]）
 ├── channels/           # 方式目录：一方式一文件夹（channel_*.py 实现 + README 内部降级链说明；零获取逻辑）
 ├── scripts/            # gh.py（唯一 CLI）+ 治理件（budget/env_guard/report/probe/lines）
 ├── update/             # ★更新层（v2.1.0）：仅显式调用（check / apply --yes / rollback；从不自检）

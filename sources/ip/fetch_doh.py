@@ -1,8 +1,8 @@
 """获取方式②：DoH 解析源——DNS 协议查询（异构于 hosts 清单拉取）→ 候选映射。
 
-统一纪律（D15）：glob 发现本文件夹实例（DoH 服务器）→ 并发查询 →
-单服务器失败跳过（tried 留痕）→ 双服务器结果**合并去重**（候选宁多勿漏，测速会筛）。
-查询目标域 = `../domains.json`（大类级共享全量域清单）。
+统一纪律（D15）：实例清单由 collect 注入（sources.json 的 ways.doh.sources）→ 并发查询 →
+单服务器失败跳过（tried 留痕）→ 多服务器结果**合并去重**（候选宁多勿漏，测速会筛）。
+查询目标域 = sources.json 的 kinds.ip.domains（大类级共享全量域清单）。
 """
 from __future__ import annotations
 
@@ -15,37 +15,17 @@ import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_IP_DIR = _HERE.parent
-_PKG = _HERE.parents[2]
+_PKG = _HERE.parents[1]
 for _p in (str(_PKG / "scripts"),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 import env_guard  # noqa: E402
 
+WAY = "doh"
 IP_RE = re.compile(r'"data":"(\d+\.\d+\.\d+\.\d+)"')
 TIMEOUT = 6.0
 WORKERS_DOMAIN = 16
-
-
-def instances() -> list:
-    out = []
-    for p in sorted(_HERE.glob("*.json")):
-        try:
-            d = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if d.get("enabled", True) and d.get("url"):
-            out.append(d)
-    return out
-
-
-def domains() -> list:
-    """全量域清单（大类共享配置）。"""
-    try:
-        return json.loads((_IP_DIR / "domains.json").read_text(encoding="utf-8")).get("domains") or []
-    except Exception:
-        return []
 
 
 def _query(server: dict, domain: str) -> list:
@@ -69,13 +49,13 @@ def _query(server: dict, domain: str) -> list:
     return out
 
 
-def collect() -> dict:
-    """并发查询：全部服务器 × 全部域 → 扁平 entries（带源名，聚合归 app.py）。
+def collect(insts: list, domains: list | None = None) -> dict:
+    """并发查询：全部服务器 × 全部域 → 扁平 entries（带源名，聚合归 collect.py）。
 
     返回 {ok, entries:[{ip, domain, source}], tried:[…]}。
     """
-    servers = instances()
-    doms = domains()
+    servers = insts
+    doms = domains or []
     t0 = time.perf_counter()
     entries: list = []
     tried = []
@@ -108,4 +88,6 @@ def collect() -> dict:
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    print(json.dumps(collect(), ensure_ascii=False, indent=2))
+    node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
+    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or [], node.get("domains")),
+                     ensure_ascii=False, indent=2))

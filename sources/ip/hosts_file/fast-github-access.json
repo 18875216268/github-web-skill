@@ -1,6 +1,0 @@
-{
-  "name": "fast-github-access",
-  "enabled": false,
-  "url": "https://namegenliang.github.io/fast-github-access/hosts/github-hosts.txt",
-  "note": "fast-github-access：每 2 小时自动同步；2026-09-29 实测 HTTP 4xx（清单路径变更）——保留候选，待路径恢复后改回 enabled。"
-}
