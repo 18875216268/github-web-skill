@@ -1,98 +1,108 @@
-# github-web-skill · GitHub 访问层
+# 访问GitHub网络（github-web-skill）
 
-给 **Agent**（也给人）用的 GitHub 访问层：按场景把请求路由到合适通道，失败逐级降级，全程可编程、可回滚、诚实报告。
-遵循 [Agent Skills](https://agentskills.io/specification) 规范（入口 `SKILL.md`，`skills-ref validate` 通过 ✓）——**完全独立**，可直接上架 Agent Skills 平台（workbuddy 等）或独立安装。
+## ① 作用
 
-```
-直连 → 钉 IP → hosts 兜底 → 第三方镜像 → CDN 单文件 → 离线指引
-```
+一句话：**网络受限时，让 GitHub 恢复可用。**
 
-> 整体链为**全景示意**；实际执行按其**分场景路由**（`routes/routes.json` 唯一事实源）——单文件等场景的通道顺序见 `SKILL.md`〈场景路由（降级链）〉✓
+你是不是遇到过这些情况——`git clone` 卡住不动或直接失败、网页上的文件和 Release 下载不动、浏览器压根打不开 github.com、公司网络屏蔽了 GitHub、换了代理反而更乱？这个工具箱就是来解决它们的：
 
-## 特性
+- **克隆 / 拉取 / 推送仓库**、**下载单个文件和 Release 资产**、**修复浏览器打不开 GitHub**（改 hosts，改前备份、随时回滚）
+- 它会自动在多条通路（官方直连、钉 IP、第三方镜像、CDN 缓存等）里**选当下最快的一条**；这条不行，自动换下一条，直到成功或如实告诉你所有路都试过了
+- 上手只要一条命令：`python scripts/gh.py diag`——先看你的网络环境能走哪条路（其余命令见各节说明）
 
-- **方式目录化（v2.0.0）**：`channels/<通道名>/` 一方式一文件夹（实现 + 源清单 + README 内部降级链说明）——新增/删除方式只需「放文件 + `routes.json` 注册一行」，`gh.py` 按注册表动态加载，零代码改动。
-- **分场景通道路由**：`routes/routes.json` 是唯一事实源，`ROUTES.md` 为渲染产物（含情况×方式矩阵）；`gh.py routes --check` 校验（含注册表双向完整性）、`--render` 重绘。
-- **统一资源层**（v2.2.0）：`sources/` 纯外部源、每次全新拉取——`sources.json` 唯一数据文件（`collect.py` 双模式聚合：登记型/fetch 驱动型；测速策略数据声明）——IP 源（hosts 清单源 ×8 + DoH ×5 + 官方段安全闸）、镜像源（登记 68）、CDN 源（13）；增删源 = 编辑对应节。
-- **并发择优**：镜像 / CDN / 候选 IP 全部并发探活（完成即用），单条 4s 快速判不通、立即换源；热源命中时零探测开销。
-- **失败 ≠ 失效**：源池只增不删——不可达只按指数退避冷却（封顶 1h、到期自动半开重试），由用户区健康账本排序择路。
-- **通道可选/可排除**：`--force <通道>` 只走单道；`--exclude ch1,ch2` 裁剪降级链（如"不要经第三方"）；两者互斥。pin/hosts 为**纯应用通道**（零获取逻辑，消费资源层供给）。
-- **更新层（v2.1.0）**：仅显式调用 `gh.py update` 才出网——`--check` 只读检测 / `--apply` 需 `--yes`（staging 校验 → 备份 → 原地应用 → 可回滚）；本技能**从不自检更新**（无后台/定时检查）。更新地址：`https://github.com/18875216268/github-web-skill`。
-- **Agent 友好**：stdout = 单个 JSON（含 `channel/via/third_party/tried/next`）；stderr = 一行人类摘要；用户区 JSONL 留痕；退出码 `0/1/2/3` 语义化。
-- **零系统改动优先**：`hosts` 只能显式授权（`--yes`）、写前备份、必可回滚；写操作**永不经过第三方镜像**。
-- **零第三方依赖**：Python 标准库 + 系统 `git` / `curl`。
+## ② 基本信息
 
-## 快速开始
+| 项目 | 内容 |
+| --- | --- |
+| 名称 | 访问GitHub网络（github-web-skill） |
+| 版本 | 2.2.1 |
+| 日期 | 2026-09-30 |
+| 作者 | 木小匣 |
+| 许可 | MIT |
 
-```bash
-python scripts/gh.py diag                                  # 1) 先看环境能走哪条通道（--full 出全量并发实测）
-python scripts/gh.py get owner/repo:path/to/file.txt       # 2) 取单个文件（自动降级）
-python scripts/gh.py get --url https://github.com/…/releases/download/…   # Release 资产 / 任意 https
-python scripts/gh.py get owner/repo:file.txt --exclude cdn # 3) 策略约束：不经 CDN（与 --force 互斥）
-python scripts/gh.py git clone https://github.com/owner/repo.git          # 4) 包裹 git（自动守卫+预算+降级）
-python scripts/gh.py hosts --status                        # 5) 人打不开 GitHub 时的兜底（需授权）
-python scripts/gh.py update --check                        # 6) 检测本技能更新（仅显式调用，从不自检）
-```
-
-自检（离线可跑）：
-
-```bash
-python tests/run_tests.py              # 全量（含真机只读冒烟）
-python tests/run_tests.py --offline    # 跳过出网冒烟
-```
-
-作为 Skill 安装：把本目录放进宿主的技能目录（如 CodeBuddy 的 `~/.codebuddy/skills/github-web-skill/`）即可被自动加载；
-也可只当命令行工具用（`python scripts/gh.py --help`）。
-
-## 目录结构
+## ③ 目录结构
 
 ```
 github-web-skill/
-├── SKILL.md            # 入口：原则 / 通道一览 / 场景路由 / 命令速查 / 边界（先读这个）
-├── manifest.json       # 声明：版本 / 分层 / 网络白名单 / shell / 写入范围
-├── README.md           # 本文件（人读）
-├── LICENSE             # MIT
-├── routes/             # routes.json（事实源）+ ROUTES.md（渲染产物）
-├── sources/            # ★资源层：纯外部源，每次全新拉取（hub.py + collect.py 双模式聚合 + speedtest.py；
-│                       #   sources.json 唯一数据文件 + ip/[fetch_hosts, fetch_doh, fetch_ghmeta]）
-├── channels/           # 方式目录：一方式一文件夹（channel_*.py 实现 + README 内部降级链说明；零获取逻辑）
-├── scripts/            # gh.py（唯一 CLI）+ 治理件（budget/env_guard/report/probe/lines）
-├── update/             # ★更新层（v2.1.0）：仅显式调用（check / apply --yes / rollback；从不自检）
-└── tests/              # 9 个测试文件 + 总入口
+├── SKILL.md            # 技能入口（给 AI 程序读的使用说明；人看本文档即可）
+├── manifest.json       # 技能声明：版本 / 分层 / 网络白名单 / 写入范围
+├── README.md           # 本文件
+├── LICENSE             # MIT 许可证
+├── routes/             # 路由层：routes.json（事实源）+ ROUTES.md（自动生成的说明图）
+├── sources/            # 资源层：sources.json（唯一数据文件）+ hub / collect / speedtest + ip/
+├── channels/           # 通道层：6 条通路，一方式一个文件夹（direct/pin/cdn/mirror/hosts/offline）
+├── scripts/            # 治理层：gh.py（唯一命令入口）+ 预算/环境守卫/报告/并发探测/常量
+├── update/             # 更新层：仅在你明确要求时才检测和安装更新
+└── tests/              # 自检测试（python tests/run_tests.py 即可跑）
 ```
 
-## 环境要求
+## ④ 核心架构（五大层级）
 
-- Python 3.10+（仅标准库）；系统 `git` 与 `curl`
-- 出网：GitHub 官方端点 / 媒体 CDN / 第三方镜像池 / 公共 DoH / 外部 hosts 清单源与官方段闸（全部登记于资源层 `sources/`，`hub.py --check` 对账）
-- `hosts` 通道需要管理员权限（Windows：以管理员运行；Linux/macOS：`sudo`）
-
-环境变量：`GH_ACCESS_HOME`（用户区，默认 `~/.github-access`）· `GH_HOSTS_FILE`（假 hosts，演练用）。
-
-## 边界（明示）
-
-- 第三方镜像 / CDN 可用性会漂移：本 Skill 的处理是"并发探活 + 换源 + 冷却重试 + 如实报告"，不承诺某条源永远可用。
-- `cdn` 只读单文件，不替代 git；分支引用有缓存滞后，正式判定请用 tag/commit 固定。
-- `hosts` 只动自己的标记块（`# github-web-skill Start/End`），删除该块即恢复原状；未通过存活校验的 IP 不会写入。
-
-## 更新
-
-更新地址：**<https://github.com/18875216268/github-web-skill>**（远端 `main` 分支 `manifest.json` 为版本事实源）。
-
-本技能**从不自检更新**——无后台线程、无定时检查，其他任何命令都不附带版本检测；仅当你显式要求时才出网：
-
-```bash
-python scripts/gh.py update --check          # 检测（只读，比版本；报告 local/remote/update_available）
-python scripts/gh.py update --apply --yes    # 应用（staging 校验 → 自动备份 → 原地替换；可回滚）
-python scripts/gh.py update --rollback       # 回滚到最近一次更新前
+```
+① 路由层  routes/     —— 情况决定走法
+② 资源层  sources/    —— 可用通路从哪来
+③ 通道层  channels/   —— 每条通路的具体实现
+④ 治理层  scripts/    —— 唯一命令入口与安全规则
+⑤ 更新层  update/     —— 软件自身的更新
 ```
 
-细节与安全边界见 `update/README.md`。
+### ① 路由层（routes/）—— 情况决定走法
 
-## 许可
+「遇到什么情况、按什么顺序试哪些通路」**不是写死的**，而是由 `routes/routes.json` 这份事实源登记：
 
-MIT（见 `LICENSE`）。
+- **通道注册表**：每条通路登记它的实现文件、是否经第三方、是否需要授权、**它消费哪类供给**（`kinds` 声明）
+- **场景路由**：git 只读、git 写、取单个文件、解析被污染、浏览器打不开……每种情况有自己的通路序列（例如 git 写操作永远不经过第三方镜像——这是登记在案的红线）
+- **自动对账**：`gh.py routes --check` 会校验「通道声明的供给」与资源层实际登记的供给是否一致、场景链是否合法；`ROUTES.md` 是由它自动生成的说明图
 
-## 作者
+一句话：**改这里 = 改走法**；校验器自动守门。
 
-**木小匣**
+### ② 资源层（sources/）—— 可用通路从哪来
+
+所有「备选线路」都登记在**唯一数据文件 `sources.json`** 里，每次使用都是全新拉取、并发测速、择优：
+
+| 大类 | 内容 | 数量 |
+| --- | --- | --- |
+| ip | hosts 清单源 + DoH 解析源 + GitHub 官方段安全闸——产出可用的 GitHub IP | 清单 8 / DoH 5 |
+| mirror | 第三方转发代理池（只读兜底） | 68 |
+| cdn | 媒体 CDN 边缘缓存（只读单文件） | 13 |
+
+围绕它的三个角色：`hub.py` 统一编排（并发获取 → 测速 → 每类排出最快的 Top10）；`collect.py` 按数据分派（登记型直接读表、拉取型并发跑脚本）；`speedtest.py` 只管测速（测法由数据声明，如 IP 用 TCP 443、镜像用 HEAD）。**增删一条源 = 编辑 `sources.json` 对应节**，校验器自动对账；ip 大类的获取方式脚本在 `sources/ip/`。
+
+### ③ 通道层（channels/）—— 每条通路的具体实现
+
+6 条通路各一个文件夹（实现 + 说明文档）：`direct`（官方直连）、`pin`（单次调用内钉 IP）、`hosts`（改系统解析救浏览器）、`mirror`（第三方转发）、`cdn`（边缘缓存读单文件）、`offline`（全部失败时的离线指引）。每条通路只干自己的事，互不知道对方存在。
+
+### ④ 治理层（scripts/）—— 唯一命令入口与安全规则
+
+`gh.py` 是唯一命令入口（diag 诊断 / get 取文件 / git 包裹 git / hosts 修浏览器 / routes 校验 / update 更新）。预算超时、代理环境清理、诚实报告（试过哪些、为什么失败、下一步建议）都由这一层统一执行，任何通路不得绕过。
+
+### ⑤ 更新层（update/）—— 软件自身的更新
+
+见下方「更新地址」。更新前自动备份、随时可回滚。
+
+## ⑤ 环境要求
+
+- Python 3.10+（仅标准库，无需 pip 安装任何东西）
+- 系统装有 `git` 与 `curl`
+- 需要出网（GitHub 官方端点 / 媒体 CDN / 第三方镜像池 / 公共 DoH——全部登记在案，`hub.py --check` 可对账）
+- `hosts` 通路需要管理员权限（Windows：以管理员运行；Linux/macOS：`sudo`）
+
+## ⑥ 更新地址
+
+**https://github.com/18875216268/github-web-skill**
+
+本技能**从不自检更新**（无后台、无定时检查）；仅在你明确要求时才出网：
+
+```
+python scripts/gh.py update --check          # 检测（只读，比版本）
+python scripts/gh.py update --apply --yes    # 应用（自动备份，可回滚）
+python scripts/gh.py update --rollback       # 回滚到更新前
+```
+
+## ⑦ 边界说明
+
+- **第三方镜像 / CDN 的可用性会漂移**：处理方式是并发探活 + 自动换源 + 冷却重试，不承诺某条源永远可用，但承诺「换源继续试」并如实报告。
+- **CDN 只能读单个文件**，不能替代 git；分支引用可能有缓存滞后，正式判定请用 tag/commit 固定。
+- **改 hosts 只动自己的标记块**，改前自动备份、随时可回滚；未通过存活校验的 IP 绝不写入。
+- **写操作（push 等）永不经过第三方镜像**——这是登记在 routes.json 里的红线，验收用例锁定。
+- 本技能**不会静默改系统**：改 hosts 必须显式授权（`--yes`），**从不自检更新**。
