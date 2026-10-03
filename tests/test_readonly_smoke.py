@@ -15,16 +15,22 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent
 PKG = TESTS.parent
 GH = PKG / "scripts" / "gh.py"
+sys.dont_write_bytecode = True      # 包内零运行态：不落 __pycache__
 sys.path.insert(0, str(TESTS))
 from _harness import check, finish  # noqa: E402
 
 tmp = Path(tempfile.mkdtemp(prefix="gh_smoke_"))
 REPO = "github/gitignore"
+# 隔离用户区：否则子进程会用真实 ~/.github-access（diag 会建目录、写 cache 与日志）
+SMOKE_HOME = tmp / "home"
+SMOKE_HOME.mkdir(parents=True, exist_ok=True)
+BASE_ENV = {**os.environ, "GH_ACCESS_HOME": str(SMOKE_HOME)}
 
 
 def run(args, timeout=180, env=None):
     p = subprocess.run([sys.executable, str(GH), *args], capture_output=True, text=True,
-                       timeout=timeout, encoding="utf-8", errors="replace", env=env)
+                       timeout=timeout, encoding="utf-8", errors="replace",
+                       env={**BASE_ENV, **(env or {})})
     try:
         data = json.loads(p.stdout)
     except Exception:

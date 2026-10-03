@@ -1,6 +1,6 @@
 # direct · 直连官方
 
-## 一、方式定义
+## 一、通道定义
 **什么都不改**：不换源、不换系统、不换入口，直连 GitHub 官方端点与官方协议（git smart HTTP / raw / api / codeload）。实现：`channel_direct.py`。
 
 ## 二、适合的情况

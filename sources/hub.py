@@ -88,10 +88,15 @@ def _check() -> dict:
     return {"ok": not missing, "checked": len(_endpoints()), "missing_in_allowlist": missing}
 
 
-def collect() -> dict:
-    """流式三池（D12）：并发获取各大类 → 统一测速（策略数据声明）→ 每大类 Top10。"""
+def collect(only: tuple | None = None) -> dict:
+    """流式三池：并发获取各大类 → 统一测速（策略数据声明）→ 每大类 Top10。
+
+    `only`：只采集指定大类。pin / hosts 只消费 `ip`，不指定就会为 mirror+cdn 白算 81 次测速。
+    """
     t0 = time.perf_counter()
     kinds = _data()["kinds"]
+    if only:
+        kinds = {k: v for k, v in kinds.items() if k in only}
     collect_mod = _load_collect()
     tasks = [(k, (lambda k=k, n=kinds[k]: collect_mod.collect_kind(k, n, n.get("domains"))))
              for k in kinds]

@@ -2,10 +2,11 @@
 
 模式分派（按 sources.json 的 kinds 节形态，新增大类零代码）：
   有 "ways"      → _fetch_driven：并发加载 fetch 脚本（路径=数据）→ 聚合去重
-                   （fetch 协议约定：返回 {entries:[{ip,domain,source}], tried} ；
+                   （fetch 协议约定：返回 {entries:[{ip,domain,source}], tried}；
                      产出含 "cidrs" 的方式 = 官方段旁路 meta，不进候选）
   只有 "sources" → _register：纯登记（enabled 过滤 + 字段透传）
-  两者并存       → 登记与动态合并（如 mirror 未来引入 dynamic 获取时零改码启用）
+  两者并存       → 登记与动态合并（如mirror 未来引入 dynamic 获取时零改码启用）
+两种模式都按 enabled 过滤（禁用源既不登记也不拉取）。
 输出统一：{"ok","candidates","tried","meta","elapsed"}——hub 测速管道的直接输入。
 """
 from __future__ import annotations
@@ -52,7 +53,7 @@ def _register(kind: str, node: dict) -> dict:
 
 
 def _fetch_driven(kind: str, node: dict, domains: list | None) -> dict:
-    """fetch 驱动模式：并发跑全部获取方式 → 聚合去重（同域交叉印证 sources[]）。"""
+    """fetch 驱动模式：并发跑全部**启用**的获取方式 → 聚合去重（同域交叉印证 sources[]）。"""
     t0 = time.perf_counter()
     ways = node.get("ways") or {}
     mods = {}
@@ -63,7 +64,10 @@ def _fetch_driven(kind: str, node: dict, domains: list | None) -> dict:
 
     tasks = []
     for name, mod in mods.items():
-        insts = (ways.get(name) or {}).get("sources") or []
+        # enabled 过滤对 fetch 型同样生效（与登记型 _register 同一语义）：
+        # 禁用源不白拉——否则 sources.json 里 enabled:false 形同虚设。
+        insts = [s for s in ((ways.get(name) or {}).get("sources") or [])
+                 if s.get("enabled", True)]
         tasks.append((name, (lambda m=mod, i=insts: m.collect(i, domains))))
     entries: list = []
     tried: list = []

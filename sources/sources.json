@@ -3,7 +3,7 @@
   "updated": "2026-09-29",
   "kinds": {
     "ip": {
-      "desc": "IP 供给（治解析污染与线路劣化）：hosts 清单源 + DoH 解析并发拉取，官方段安全闸过滤。domains 为大类共享探测目标域全集（DoH 查询与测速目标；ipscan 退场后的继承者，2026-09-29）。",
+      "desc": "IP 供给（治解析污染与线路劣化）：hosts 清单源 + DoH 解析并发拉取（enabled:false 的源既不登记也不拉取），官方段安全闸过滤。domains 为大类共享探测目标域全集（DoH 查询与测速目标）。",
       "speedtest": {
         "method": "tcp",
         "port": 443
@@ -357,7 +357,7 @@
             "http",
             "git"
           ],
-          "note": "参考包当期 291ms（与 ghproxy.net 同源复测）"
+          "note": "与 ghproxy.net 同 URL（不同线路），刻意保留为独立条目：健康账本按 name 分别记延迟与冷却，一条线路劣化时另一条仍会被优先尝试。**不要合并**（维护者 2026-10-03 决策）。"
         },
         {
           "name": "down.mxw.xx.kg",
@@ -778,7 +778,7 @@
       ]
     },
     "cdn": {
-      "desc": "媒体 CDN 边缘缓存（只读单个文件）：jsDelivr 多边缘 + 公认等价源（statically/githack）。speedtest.args 为测速探针 URL 渲染参数。",
+      "desc": "媒体 CDN 边缘缓存（只读单个文件）：jsDelivr 系边缘（主域/Fastly/Gcore/Cloudflare 测试/bunny 镜像）+ 公认等价源（statically/githack/gitmirror-raw/gitcdn）+ JSDMirror 系4域。speedtest.args 为测速探针 URL 渲染参数。",
       "speedtest": {
         "method": "head",
         "args": {

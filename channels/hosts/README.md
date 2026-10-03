@@ -1,13 +1,13 @@
 # hosts · hosts 写入
 
-## 一、方式定义
+## 一、通道定义
 **改系统解析**：把 GitHub 域名写入系统 hosts 文件、钉到实测 IP——影响全系统（含浏览器）。实现：`channel_hosts.py`。
 
 ## 二、适合的情况
 **人打不开 GitHub（浏览器）**——唯一能救浏览器的方式（Agent 侧代理链帮不了人肉浏览）。本 Skill 不静默改系统：`--status` 看现状 → 报告 → `--apply --yes` 显式授权才写。
 
 ## 三、内部降级链（细粒度）
-候选来源：资源层 `hub.py` 全量供给（经 pin.fetch_hosts 转交）→ `verify_for_hosts` 严格校验（pin 通道内的写前闸：有已知小文件的域要真实取到 1 字节内容且 2xx）→ `--apply --yes` 写入标记块 → 自动备份 → `--rollback` 随时回滚。幂等：标记块重复 apply 不叠加。
+候选来源：资源层 `hub.py` 全量供给（经 `pin.fetch_ip_candidates` 转交）→ `verify_for_hosts` 严格校验（pin 通道内的写前闸：有已知小文件的域要真实取到 1 字节内容且 2xx）→ `--apply --yes` 写入标记块 → 自动备份 → `--rollback` 随时回滚。幂等：标记块重复 apply不叠加。
 
 ## 四、前提与副作用 / 红线
 需管理员权限（Windows 管理员运行 / Linux·macOS `sudo`）；影响全系统解析（应用前必须报告征得同意）；备份必留、回滚必可用。

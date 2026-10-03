@@ -15,6 +15,7 @@ class Budget:
     def __init__(self, overall=180.0, per_call=120.0, min_effective=10.0,
                  circuit_threshold=3, base=0.5, cap=8.0, clock=time.monotonic, sleeper=time.sleep):
         self.deadline = clock() + float(overall)
+        self.overall = float(overall)          # 留原值：供 snapshot 如实报告
         self.per_call = float(per_call)
         self.min_effective = float(min_effective)
         self.circuit_threshold = int(circuit_threshold)
@@ -33,6 +34,16 @@ class Budget:
     def timeout_for(self, want: float) -> float:
         """单次超时永远不超过剩余预算。"""
         return max(1.0, min(float(want), self.remaining()))
+
+    def snapshot(self) -> dict:
+        """预算快照（**如实报告**，让调用方能判断失败是否因预算耗尽）。
+
+        `exceeded=True` 表示已越过预算——此时应先怀疑超时/预算，而不是"网络彻底不通"。
+        """
+        rem = self.remaining()
+        return {"overall_s": self.overall, "remaining_s": round(max(0.0, rem), 2),
+                "used_s": round(max(0.0, self.overall - rem), 2),
+                "exceeded": rem < 0}
 
     # ---------- 熔断（同一目标连续失败） ----------
     def register_empty(self) -> bool:

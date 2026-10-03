@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True      # 包内零运行态：不落 __pycache__
 tmp = Path(tempfile.mkdtemp(prefix="gh_hosts_test_"))
 os.environ["GH_ACCESS_HOME"] = str(tmp / "home")     # 用户区也隔离，避免污染真实日志/备份
 os.environ["GH_HOSTS_FILE"] = str(tmp / "hosts")     # 假 hosts

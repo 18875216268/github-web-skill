@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import concurrent.futures as _cf
 import json
 import re
 import subprocess
@@ -21,6 +20,7 @@ for _p in (str(_PKG / "scripts"),):
         sys.path.insert(0, _p)
 
 import env_guard  # noqa: E402
+import probe as _probe  # noqa: E402   # 统一并发原语（守护线程 + deadline 收手）
 
 WAY = "doh"
 IP_RE = re.compile(r'"data":"(\d+\.\d+\.\d+\.\d+)"')
@@ -52,6 +52,10 @@ def _query(server: dict, domain: str) -> list:
 def collect(insts: list, domains: list | None = None) -> dict:
     """并发查询：全部服务器 × 全部域 → 扁平 entries（带源名，聚合归 collect.py）。
 
+    并发**统一用治理层 `probe.race`**（守护线程 + deadline 到点收手 + 异常不外抛），
+    与 hub / collect / speedtest 同一套语义：到点即返回，**不阻塞进程退出**。
+    （历史实现用 ThreadPoolExecutor：其 worker 非守护，Python 退出时会 join，
+      导致 hub 的 deadline 形同虚设、进程退不出去——已归一。）
     返回 {ok, entries:[{ip, domain, source}], tried:[…]}。
     """
     servers = insts
@@ -60,24 +64,17 @@ def collect(insts: list, domains: list | None = None) -> dict:
     entries: list = []
     tried = []
     if servers and doms:
-        jobs = [(s, d) for s in servers for d in doms]
-
-        def one(job):
-            s, d = job
-            return s["name"], d, _query(s, d)
-
+        tasks = [("%s|%s" % (s["name"], d), (lambda s=s, d=d: _query(s, d)))
+                 for s in servers for d in doms]
         done = 0
-        with _cf.ThreadPoolExecutor(max_workers=min(WORKERS_DOMAIN, len(jobs))) as ex:
-            futs = {ex.submit(one, j): j for j in jobs}
-            try:
-                pending = _cf.as_completed(futs, timeout=TIMEOUT * 3)
-                for f in pending:
-                    sname, d, ips = f.result()
-                    done += 1
-                    for ip in ips:
-                        entries.append({"ip": ip, "domain": d, "source": "doh/" + sname})
-            except _cf.TimeoutError:
-                pass                     # 到点收口：保留已收 entries（D12/D15 纪律）
+        for key, ok, ips, _ms in _probe.race(tasks, workers=WORKERS_DOMAIN,
+                                            deadline=TIMEOUT * 3):
+            if not ok:
+                continue                       # 该 (服务器,域) 组合超时/失败：跳过，不阻塞其余
+            done += 1
+            sname, d = key.split("|", 1)
+            for ip in ips or []:
+                entries.append({"ip": ip, "domain": d, "source": "doh/" + sname})
         for s in servers:
             n = sum(1 for e in entries if e["source"] == "doh/" + s["name"])
             tried.append({"source": "doh/" + s["name"], "ok": n > 0, "count": n,
@@ -89,5 +86,5 @@ def collect(insts: list, domains: list | None = None) -> dict:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
-    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or [], node.get("domains")),
-                     ensure_ascii=False, indent=2))
+    insts = [s for s in ((node["ways"][WAY] or {}).get("sources") or []) if s.get("enabled", True)]
+    print(json.dumps(collect(insts, node.get("domains")), ensure_ascii=False, indent=2))

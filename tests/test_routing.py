@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True      # 包内零运行态：不落 __pycache__
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(TESTS.parent / "scripts"))
 

@@ -1,6 +1,6 @@
 # mirror · 第三方转发
 
-## 一、方式定义
+## 一、通道定义
 **换入口**：第三方转发代理池——把 GitHub URL 改写为镜像前缀转发（HTTP 读 + git 只读 clone/fetch）。实现：`channel_mirror.py`（源池=统一资源层 `sources.json` 的 kinds.mirror 节，与资源层聚合器 `collect.py` 同口径）。
 
 ## 二、适合的情况

@@ -28,9 +28,14 @@ import hub as _hub  # noqa: E402
 GOOD_F = report.HOME / "cache" / "ip_good.json"
 
 
-def fetch_hosts() -> dict:
-    """域名 → 候选 IP（资源层供给全量，按域组织、延迟升序）；本通道零过滤（D21）。"""
-    r = _hub.collect()
+def fetch_ip_candidates() -> dict:
+    """域名 → 候选 IP（资源层供给全量，按域组织、延迟升序）；本通道零过滤（D21）。
+
+    注意命名：返回的是 `{domain: [ip, ...]}` 映射，**不是 hosts 文件内容**——
+    故不叫 `fetch_hosts`（那会与 `channels/hosts/` 的系统 hosts 文件混淆）。
+    本模块内 `hosts` 一律指这个域名→IP 映射；系统 hosts 文件只出现在 `verify_for_hosts` 的说明里。
+    """
+    r = _hub.collect(only=("ip",))     # pin 只消费 ip：不为其余大类白算测速
     return r.get("ip", {}).get("by_domain") or {}
 
 
@@ -81,35 +86,43 @@ def _save_alive(dom_alive: dict) -> None:
         pass
 
 
-def _verify_first(hosts: dict, domains: list, timeout: float = 3.0, limit: int = 3) -> dict:
+def _fail_detail(executed: int, rounds: int, budget_stopped: bool) -> str:
+    """pin 失败原因措辞：**如实区分"没试"与"试了全败"**（别把预算耗尽说成 N 轮全败）。"""
+    if executed == 0:
+        return "预算不足，未开始传输级 failover"
+    tail = "%d/%d 轮传输级 failover 全败" % (executed, rounds)
+    return tail + ("（预算耗尽收口）" if budget_stopped else "")
+
+
+def _verify_first(by_domain: dict, domains: list, timeout: float = 3.0, limit: int = 3) -> dict:
     """把「实测有响应」的 IP 提到最前（5 分钟缓存）。
 
     为什么必须做：TCP 连得上但 TLS 被掐的 IP 会白等满一轮（实测每轮 30~45s）；
     先花 3 秒逐 IP 探一下，能把这一轮直接省掉。历史好 IP（_apply_good）排在存活 IP 之后。
     """
-    want = [d for d in domains if hosts.get(d)]
+    want = [d for d in domains if by_domain.get(d)]
     if not want:
-        return hosts
+        return by_domain
     cache = _load_alive()
     fresh, alive = {}, {}
     for d in want:
         if d in cache:
             alive[d] = list(cache[d].get("ips") or [])
         else:
-            fresh[d] = (verify_ips({d: hosts[d]}, limit=limit, timeout=timeout)).get(d, [])
+            fresh[d] = (verify_ips({d: by_domain[d]}, limit=limit, timeout=timeout)).get(d, [])
             alive[d] = fresh[d]
     _save_alive(fresh)
     out = {}
-    for d, ips in hosts.items():
+    for d, ips in by_domain.items():
         lead = [ip for ip in alive.get(d, []) if ip in ips]
         out[d] = lead + [ip for ip in ips if ip not in lead]
     return out
 
 
-def _apply_good(hosts: dict) -> dict:
+def _apply_good(by_domain: dict) -> dict:
     good = _load_good()
     out = {}
-    for domain, ips in hosts.items():
+    for domain, ips in by_domain.items():
         g = (good.get(domain) or {}).get("ip")
         out[domain] = ([g] + [ip for ip in ips if ip != g]) if g else list(ips)
     return out
@@ -118,15 +131,15 @@ def _apply_good(hosts: dict) -> dict:
 class PinProxy:
     """单次调用作用域的 CONNECT 代理：把 GitHub 域钉到候选 IP，其余域走正常 DNS。"""
 
-    def __init__(self, hosts: dict, connect_timeout: float = lines.PIN_CONNECT_TIMEOUT):
-        self.hosts = hosts
+    def __init__(self, by_domain: dict, connect_timeout: float = lines.PIN_CONNECT_TIMEOUT):
+        self.by_domain = by_domain
         self.connect_timeout = connect_timeout
         self.port = 0
         self._srv = None
         self.used: dict = {}          # 本次实际连通的 {domain: ip}，供"上次可用优先"缓存
 
     def _resolve(self, host: str) -> list:
-        for domain, ips in self.hosts.items():
+        for domain, ips in self.by_domain.items():
             if host == domain or host.endswith("." + domain):
                 return list(ips)
         return []
@@ -248,44 +261,44 @@ def _probe_ips(pairs: list, timeout: float, strict: dict) -> dict:
     return {d: [ip for ip, _ in sorted(v, key=lambda x: x[1])] for d, v in alive.items()}
 
 
-def verify_ips(hosts: dict, limit: int = 2, timeout: float = 4.0) -> dict:
-    """逐 IP 实测可达性（判据：服务器有 HTTP 响应即视为可达；不做性能结论）。
+def verify_ips(by_domain: dict, limit: int = 2, timeout: float = 4.0) -> dict:
+    """逐 IP 实测可达性（弱判据：服务器有 HTTP 响应即视为可达；不做性能结论）。
 
-    **并发探测**（完成即收集，按探测延迟升序返回全部存活者）；
-    用途：改 hosts 之前必须过这一关——不把"没验证过的 IP"写进系统解析。
+    **并发探测**（完成即收集，按探测延迟升序返回全部存活者）。
+    写系统 hosts 用的是更严的 `verify_for_hosts`（真实取内容 + 要 2xx），本函数不作那道闸。
     """
-    pairs = [(d, ip) for d, ips in hosts.items() for ip in (ips or [])[:limit]]
+    pairs = [(d, ip) for d, ips in by_domain.items() for ip in (ips or [])[:limit]]
     return _probe_ips(pairs, timeout, strict={})
 
 
-def verify_for_hosts(hosts: dict, limit: int = 2, timeout: float = 6.0) -> dict:
+def verify_for_hosts(by_domain: dict, limit: int = 2, timeout: float = 6.0) -> dict:
     """hosts 写入前的**严格**校验：对有已知小文件的域，真实取 1 字节内容（`-r 0-0`）且要 2xx。
 
-    为什么单独一条：根路径响应是弱判据（实测 raw 的 111.133 根路径 200、真实取文件 000/10s）。
+    为什么单独一条：根路径响应是弱判据（实测 raw 的 185.199.111.133 根路径 200、真实取文件 000/10s）。
     写进系统解析的 IP 必须"能真正取到内容"，否则只是把浏览器钉在一个假通的 IP 上。
     无稳定小文件可依的域保持 `verify_ips` 的"有响应即视为可达"判据（并如实标注在报告里）。
     """
     out = {}
     strict = getattr(lines, "STRICT_PROBE_URLS", {})
-    rest = {d: ips for d, ips in hosts.items() if d not in strict}
+    rest = {d: ips for d, ips in by_domain.items() if d not in strict}
     if rest:
         out.update(verify_ips(rest, limit=limit, timeout=timeout))
-    pairs = [(d, ip) for d, ips in hosts.items() if d in strict for ip in (ips or [])[:limit]]
+    pairs = [(d, ip) for d, ips in by_domain.items() if d in strict for ip in (ips or [])[:limit]]
     if pairs:
         out.update(_probe_ips(pairs, timeout, strict=strict))
     return out
 
 
-def _rotations(hosts: dict, rounds: int = 3):
+def _rotations(by_domain: dict, rounds: int = 3):
     """生成多轮候选顺序：第 k 轮把每域的第 k 个候选提到最前。
 
     为什么需要它：实测存在"TCP 连得上、TLS 却被掐"的 IP（线路被针对性阻断），
     只在 CONNECT 失败时换 IP 会白等到超时——必须按"能否真正传完"来换。
     """
-    maxlen = max((len(v) for v in hosts.values()), default=1)
+    maxlen = max((len(v) for v in by_domain.values()), default=1)
     for k in range(max(1, min(rounds, maxlen))):
         out = {}
-        for d, ips in hosts.items():
+        for d, ips in by_domain.items():
             if not ips:
                 out[d] = ips
                 continue
@@ -294,15 +307,18 @@ def _rotations(hosts: dict, rounds: int = 3):
         yield out
 
 
-def http_get(url: str, dest: Path, timeout: float, hosts: dict | None = None,
+def http_get(url: str, dest: Path, timeout: float, by_domain: dict | None = None,
              rounds: int = 4, budget=None) -> dict:
     host = re.sub(r"^https?://", "", url).split("/")[0]
-    hosts = _verify_first(_apply_good(hosts or fetch_hosts()), [host])
+    by_domain = _verify_first(_apply_good(by_domain or fetch_ip_candidates()), [host])
     last = {"ok": False, "detail": "无候选可试"}
-    for k, rot in enumerate(_rotations(hosts, rounds)):
+    executed = 0
+    budget_stopped = False
+    for k, rot in enumerate(_rotations(by_domain, rounds)):
         if budget is not None and not budget.can_attempt():
-            last["detail"] = "预算不足，停止 pin failover"
+            budget_stopped = True
             break
+        executed += 1
         # 轮次覆盖全部候选（每域 4 个）；每轮超时按"剩余预算 ÷ 剩余轮次"收敛，末轮仍留足传输时间
         cap = 15.0
         if budget is not None:
@@ -315,8 +331,8 @@ def http_get(url: str, dest: Path, timeout: float, hosts: dict | None = None,
             r = _curl_get(url, dest, rt, extra=["-x", "http://127.0.0.1:%d" % port])
         finally:
             proxy.stop()
-        r.update({"channel": "pin", "third_party": None,
-                  "detail": "钉 IP(%d 域·第%d轮) -> %s" % (len(hosts), k + 1, r.get("detail"))})
+        r.update({"channel": "pin", "third_party": False,
+                  "detail": "钉 IP(%d 域·第%d轮) -> %s" % (len(by_domain), k + 1, r.get("detail"))})
         if r["ok"]:
             # 只有"整次请求成功"才把该 IP 记为好用（TCP 级成功不算——实测会害下一轮白等）
             ip = proxy.used.get(host)
@@ -324,11 +340,11 @@ def http_get(url: str, dest: Path, timeout: float, hosts: dict | None = None,
                 _save_good({host: ip})
             return r
         last = r
-    last["detail"] = str(last.get("detail")) + "；%d 轮传输级 failover 全败" % rounds
+    last["detail"] = str(last.get("detail")) + "；" + _fail_detail(executed, rounds, budget_stopped)
     return last
 
 
-def git_run(args: list, cwd: str | None, timeout: float, hosts: dict | None = None,
+def git_run(args: list, cwd: str | None, timeout: float, by_domain: dict | None = None,
             rounds: int = 3, budget=None) -> dict:
     host = ""
     for a in args:
@@ -336,12 +352,15 @@ def git_run(args: list, cwd: str | None, timeout: float, hosts: dict | None = No
         if m:
             host = m.group(1)
             break
-    hosts = _verify_first(_apply_good(hosts or fetch_hosts()), [host] if host else [])
+    by_domain = _verify_first(_apply_good(by_domain or fetch_ip_candidates()), [host] if host else [])
     last = {"ok": False, "detail": "无候选可试", "rc": 1, "out": "", "err": ""}
-    for k, rot in enumerate(_rotations(hosts, rounds)):
+    executed = 0
+    budget_stopped = False
+    for k, rot in enumerate(_rotations(by_domain, rounds)):
         if budget is not None and not budget.can_attempt():
-            last["detail"] = "预算不足，停止 pin failover"
+            budget_stopped = True
             break
+        executed += 1
         # 单轮 45s：实测同一条线 ls-remote 需 9~26s，偶尔更慢——30s 会误杀"健康但慢"的一轮
         rt = budget.timeout_for(45.0) if budget is not None else max(10.0, min(float(timeout), 45.0))
         proxy = PinProxy(rot)
@@ -351,13 +370,13 @@ def git_run(args: list, cwd: str | None, timeout: float, hosts: dict | None = No
             r = _git(["-c", "http.proxy=http://127.0.0.1:%d" % port, *args], cwd, rt)
         finally:
             proxy.stop()
-        r.update({"channel": "pin", "third_party": None,
-                  "detail": "钉 IP(%d 域·第%d轮) -> %s" % (len(hosts), k + 1, r.get("detail"))})
+        r.update({"channel": "pin", "third_party": False,
+                  "detail": "钉 IP(%d 域·第%d轮) -> %s" % (len(by_domain), k + 1, r.get("detail"))})
         if r["ok"]:
             ip = proxy.used.get(host) if host else None
             if ip:
                 _save_good({host: ip})
             return r
         last = r
-    last["detail"] = str(last.get("detail")) + "；%d 轮传输级 failover 全败" % rounds
+    last["detail"] = str(last.get("detail")) + "；" + _fail_detail(executed, rounds, budget_stopped)
     return last

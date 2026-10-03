@@ -49,4 +49,5 @@ def collect(insts: list, domains: list | None = None) -> dict:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
-    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or []), ensure_ascii=False, indent=2))
+    insts = [s for s in ((node["ways"][WAY] or {}).get("sources") or []) if s.get("enabled", True)]
+    print(json.dumps(collect(insts), ensure_ascii=False, indent=2))

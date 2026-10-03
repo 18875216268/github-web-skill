@@ -1,8 +1,8 @@
 {
   "name": "github-web-skill",
   "author": "木小匣",
-  "version": "2.2.1",
-  "updated": "2026-09-29",
+  "version": "2.2.2",
+  "updated": "2026-10-03",
   "update": {
     "url": "https://github.com/18875216268/github-web-skill",
     "mode": "on-demand（仅显式调用 gh.py update 时检测/下载；本技能从不自检更新）",
@@ -27,7 +27,7 @@
     {
       "id": "channels",
       "path": "channels/",
-      "role": "方式目录（一方式一文件夹：实现 + README 内部降级链说明；direct/pin/cdn/mirror/hosts/offline）"
+      "role": "通道目录（一通道一文件夹：实现 + README 内部降级链说明；direct/pin/cdn/mirror/hosts/offline）"
     },
     {
       "id": "scripts",

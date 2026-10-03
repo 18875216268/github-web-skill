@@ -144,6 +144,26 @@ def _parse_exclude(exclude: str | None, force: str | None) -> tuple:
     return excl, ""
 
 
+def _force_err(routes: dict, force: str | None, cap: str) -> str:
+    """--force 通道名校验：须为**已注册、且具备所需能力**的通道。
+
+    两道门：① 约定态通道（`file: null`，如 offline）本就没有实现；
+    ② 有实现文件但**不提供该能力**的通道（如 hosts 只有 status/apply/rollback，
+    没有 http_get / git_run）。二者都早在此拦下退 3（用法错误），
+    而不是放它进链后以"全通道失败"退 1 误导调用方。
+    """
+    if not force:
+        return ""
+    spec = routes["channels"].get(force)
+    if not spec:
+        return "未知通道：%s" % force
+    if not spec.get("file"):
+        return "通道 %s 是约定态（无实现文件），不能用 --force；请直接用它的命令" % force
+    if getattr(_CH.get(force), cap, None) is None:
+        return "通道 %s 不提供 %s 能力，不能用 --force；请直接用它的命令" % (force, cap)
+    return ""
+
+
 _REPO_URL_RE = re.compile(r"https?://(?:[^/]+/)([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 
 
@@ -214,9 +234,10 @@ def cmd_get(args) -> int:
     if err:
         return finish({"action": "get", "ok": False, "detail": err}, args.quiet, 3)
     routes = load_routes()
-    if args.force and args.force not in routes["channels"]:
-        return finish({"action": "get", "ok": False, "detail": "未知通道：%s" % args.force},
-                      args.quiet, 3)
+    ferr = _force_err(routes, args.force, "http_get")
+    if ferr:
+        return finish({"action": "get", "ok": False, "detail": ferr,
+                       "next": "可 --force 的通道：direct / pin / mirror / cdn"}, args.quiet, 3)
     name = Path(path).name if path else (Path(raw_url).name or "file.bin")
     dest = Path(args.dest or (report.ensure_home() / "cache" / name))
     try:
@@ -241,20 +262,28 @@ def cmd_get(args) -> int:
                        "third_party": r.get("third_party"), "file": str(dest),
                        "bytes": dest.stat().st_size if dest.exists() else 0,
                        "elapsed": round(time.perf_counter() - t0, 2),
+                       "budget": bud.snapshot(),
                        "detail": r.get("detail", ""), "tried": tried}, args.quiet)
     return finish({"action": "get", "ok": False, "detail": "全部通道失败",
                    "elapsed": round(time.perf_counter() - t0, 2), "tried": tried,
+                   "budget": bud.snapshot(),
                    "next": "gh.py diag 看环境事实；或改用 pin / hosts 通道"}, args.quiet)
 
 
 # ---------------------------------------------------------------- git
 def cmd_git(args) -> int:
     t0 = time.perf_counter()
-    # REMAINDER 会把 --force/--deadline/--exclude 一并吞进来：这里兜底解析（两种写法都成立）
+    # REMAINDER 会把 --cwd/--force/--deadline/--exclude 一并吞进来：这里兜底解析（两种写法都成立）
     git_args, force, deadline, exclude = [], args.force, args.deadline, getattr(args, "exclude", None)
+    cwd = args.cwd
     raw_args = list(args.git_args)
     i = 0
     while i < len(raw_args):
+        # git 自身没有 --cwd 选项，这里剥离不会与 git 参数冲突；缺值时保守当作 git 参数原样透传
+        if raw_args[i] == "--cwd" and i + 1 < len(raw_args):
+            cwd = raw_args[i + 1]
+            i += 2
+            continue
         if raw_args[i] == "--force" and i + 1 < len(raw_args):
             force = raw_args[i + 1]
             i += 2
@@ -287,8 +316,10 @@ def cmd_git(args) -> int:
                             min_effective=lines.DEFAULT_BUDGET["min_effective"],
                             circuit_threshold=lines.DEFAULT_BUDGET["circuit_threshold"])
     routes = load_routes()
-    if force and force not in routes["channels"]:
-        return finish({"action": "git", "ok": False, "detail": "未知通道：%s" % force}, args.quiet, 3)
+    ferr = _force_err(routes, force, "git_run")
+    if ferr:
+        return finish({"action": "git", "ok": False, "detail": ferr,
+                       "next": "可 --force 的通道：direct / pin / mirror / cdn"}, args.quiet, 3)
     if force == "mirror" and write:
         return finish({"action": "git", "ok": False,
                        "detail": "红线：写操作不允许强制走 mirror"}, args.quiet, 3)
@@ -312,7 +343,7 @@ def cmd_git(args) -> int:
                           "detail": "约定态通道或该通道不提供 git 能力，跳过"})
             continue
         timeout = bud.timeout_for(lines.DEFAULT_BUDGET["per_call"])
-        r = fn(git_args, args.cwd, timeout, budget=bud)
+        r = fn(git_args, cwd, timeout, budget=bud)
         r.setdefault("channel", ch)
         r.setdefault("third_party", routes["channels"].get(ch, {}).get("third_party") or False)
         tried.append({"channel": ch, "ok": bool(r.get("ok")), "detail": str(r.get("detail", ""))[:120]})
@@ -322,12 +353,14 @@ def cmd_git(args) -> int:
                    "third_party": r.get("third_party"), "rc": r.get("rc"),
                    "out": (r.get("out") or "")[:8000], "err": (r.get("err") or "")[-1500:],
                    "elapsed": round(time.perf_counter() - t0, 2),
+                   "budget": bud.snapshot(),
                    "detail": r.get("detail", ""), "tried": tried}
             return finish(out, args.quiet)
     nxt = "gh.py diag 看环境事实；写操作可试 pin 通道" + _archive_hint(git_args)
     return finish({"action": "git", "ok": False, "rc": 1,
                    "detail": "全部通道失败（写操作不经 mirror）" if write else "全部通道失败",
                    "elapsed": round(time.perf_counter() - t0, 2), "tried": tried,
+                   "budget": bud.snapshot(),
                    "next": nxt}, args.quiet)
 
 
@@ -350,7 +383,7 @@ def cmd_diag(args) -> int:
     c = _CH["cdn"].fetch(DIAG_PROBE["repo"].split("/")[0], DIAG_PROBE["repo"].split("/")[1],
                          DIAG_PROBE["ref"], DIAG_PROBE["path"], tmp, 8)
     checks["cdn"] = {"ok": c["ok"], "via": c.get("via"), "detail": c.get("detail")}
-    hosts = _CH["pin"].fetch_hosts()
+    hosts = _CH["pin"].fetch_ip_candidates()
     checks["pin"] = {"ok": bool(hosts), "domains": len(hosts),
                      "candidates": {k: len(v) for k, v in hosts.items()},
                      "source": "资源层多源聚合 + 统一测速（hub）"}
@@ -390,7 +423,7 @@ def cmd_hosts(args) -> int:
             return finish({"action": "hosts.apply", "ok": False, "need_confirm": True,
                            "detail": "改系统解析需显式授权：加 --yes 后才执行",
                            "next": "gh.py hosts --apply --yes（或由用户批准后重跑）"}, args.quiet, 2)
-        hosts = _CH["pin"].fetch_hosts()
+        hosts = _CH["pin"].fetch_ip_candidates()
         # 严格校验：写系统解析前必须"能真正取到内容"（根路径响应会假阳性，见 lines.STRICT_PROBE_URLS）
         alive = _CH["pin"].verify_for_hosts(hosts, limit=2, timeout=6.0)
         pool = {d: ips for d, ips in alive.items() if ips}
@@ -407,7 +440,7 @@ def cmd_hosts(args) -> int:
 def render_routes(routes: dict) -> str:
     out = ["# 通道与场景路由（自动生成：改 routes/routes.json 后跑 gh.py routes --render）", "",
            "> 说明：只讲每条通道「适合什么 / 作用是什么 / 前提与副作用」；不做性能评比。",
-           "> 每条通道的**内部降级链**（源池/择路/超时）见其方式目录 README：`channels/<通道名>/README.md`。", "",
+           "> 每条通道的**内部降级链**（源池/择路/超时）见其通道目录 README：`channels/<通道名>/README.md`。", "",
            "## 通道", "", "| 通道 | 经第三方 | 需授权 | 消费供给 | 作用 | 实现与说明 |",
            "| --- | --- | --- | --- | --- | --- |"]
     for name, c in routes["channels"].items():
@@ -416,9 +449,9 @@ def render_routes(routes: dict) -> str:
         out.append("| `%s` | %s | %s | %s | %s | %s |" % (
             name, c["third_party"] or "否", "是" if c["needs_confirm"] else "否", kinds,
             c["role"], impl))
-    out += ["", "## 场景路由（情况 × 方式矩阵）", "",
-            "> 情况决定方式序列；方式内部还有各自的源级降级链（见各方式目录 README）。", "",
-            "| 情况（场景） | 说明 | 方式降级链 | 入口命令 |", "| --- | --- | --- | --- |"]
+    out += ["", "## 场景路由（情况 × 通道矩阵）", "",
+            "> 情况决定通道序列；通道内部还有各自的源级降级链（见各通道目录 README）。", "",
+            "| 情况（场景） | 说明 | 通道降级链 | 入口命令 |", "| --- | --- | --- | --- |"]
     for s in routes["scenarios"]:
         out.append("| `%s` | %s | %s | %s |" % (
             s["id"], s["desc"], " → ".join("`%s`" % c for c in s["chain"]), s.get("cli", "")))

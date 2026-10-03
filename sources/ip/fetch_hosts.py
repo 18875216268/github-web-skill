@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import concurrent.futures as _cf
 import json
 import re
 import subprocess
@@ -21,6 +20,7 @@ for _p in (str(_PKG / "scripts"),):
         sys.path.insert(0, _p)
 
 import env_guard  # noqa: E402
+import probe as _probe  # noqa: E402   # 统一并发原语（守护线程 + deadline 收手）
 
 WAY = "hosts_file"
 HOSTS_LINE = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3})\s+(\S+)$")
@@ -52,29 +52,36 @@ def _pull(inst: dict) -> tuple:
     return inst["name"], got, "ok（%d 域）" % len(got)
 
 
+def _one(inst: dict) -> dict:
+    """把 `_pull` 的三元组包装成 race 认识的 dict（race 约定：有 "ok" 键即成败）。"""
+    name, got, detail = _pull(inst)
+    return {"ok": bool(got), "got": got, "detail": detail}
+
+
 def collect(insts: list, domains: list | None = None) -> dict:
     """并发拉取全部启用实例 → 扁平 entries（带源名，聚合归 collect.py）。
 
+    并发**统一用治理层 `probe.race`**（守护线程 + deadline 到点收手 + 异常不外抛），
+    与 hub / collect / speedtest 同一套语义：到点即返回，**不阻塞进程退出**。
+    （历史实现用 ThreadPoolExecutor：其 worker 非守护，Python 退出时会 join，
+      导致 deadline 形同虚设、进程退不出去——已归一。）
     返回 {ok, entries:[{ip, domain, source}], tried:[…]}。
     """
     t0 = time.perf_counter()
     entries: list = []
     tried = []
     if insts:
-        with _cf.ThreadPoolExecutor(max_workers=min(WORKERS, len(insts))) as ex:
-            futs = {ex.submit(_pull, d): d for d in insts}
-            try:
-                pending = _cf.as_completed(futs, timeout=TIMEOUT + 8)
-                for f in pending:
-                    name, got, detail = f.result()
-                    n = 0
-                    for dom, ips in got.items():
-                        for ip in ips:
-                            entries.append({"ip": ip, "domain": dom, "source": name})
-                            n += 1
-                    tried.append({"source": name, "ok": bool(got), "count": n, "detail": detail})
-            except _cf.TimeoutError:
-                pass                     # 到点收口：保留已收 entries（D12/D15 纪律——不丢部分结果）
+        tasks = [(s["name"], (lambda s=s: _one(s))) for s in insts]
+        for name, ok, val, _ms in _probe.race(tasks, workers=WORKERS, deadline=TIMEOUT + 8):
+            v = val or {}
+            got = v.get("got") or {}
+            n = 0
+            for dom, ips in got.items():
+                for ip in ips:
+                    entries.append({"ip": ip, "domain": dom, "source": name})
+                    n += 1
+            tried.append({"source": name, "ok": bool(ok) and bool(got), "count": n,
+                          "detail": v.get("detail", "")})
     return {"ok": bool(entries), "entries": entries,
             "tried": tried, "elapsed": round(time.perf_counter() - t0, 2)}
 
@@ -82,4 +89,5 @@ def collect(insts: list, domains: list | None = None) -> dict:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     node = json.loads((_PKG / "sources" / "sources.json").read_text(encoding="utf-8"))["kinds"]["ip"]
-    print(json.dumps(collect((node["ways"][WAY] or {}).get("sources") or []), ensure_ascii=False, indent=2))
+    insts = [s for s in ((node["ways"][WAY] or {}).get("sources") or []) if s.get("enabled", True)]
+    print(json.dumps(collect(insts), ensure_ascii=False, indent=2))
