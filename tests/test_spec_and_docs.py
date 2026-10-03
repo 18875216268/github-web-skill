@@ -359,6 +359,22 @@ def main() -> int:
           '"err": last_err[-1500:]' in GH_SRC,
           "cmd_git 失败分支未输出 err")
 
+    # D9 子进程本地化报错不得变成乱码。2026-10-03 实测：Windows 上 git 的中文报错是
+    # GBK(cp936)，原先 subprocess 用 encoding="utf-8", errors="replace" 解码，
+    # schannel 的报错被解成一串 U+FFFD——失败原因彻底不可读，而那恰恰最需要被读懂。
+    _eg = _harness.load_module("env_guard_d9", SCRIPTS / "env_guard.py")
+    _dec = _eg.decode_output
+    _gbk = "错误：此证书的吊销状态不可用".encode("gbk")
+    _bad_gbk = _dec(_gbk)
+    check("D9 GBK 本地化报错解码后无替换字符 U+FFFD（不再是乱码）",
+          chr(0xFFFD) not in _bad_gbk, "解码结果仍含 U+FFFD：%r" % _bad_gbk[:40])
+    check("D9b GBK 本地化报错解码后中文可读",
+          "吊销" in _bad_gbk, "中文未正确解码：%r" % _bad_gbk[:40])
+    check("D9c UTF-8 输出优先按 UTF-8 解（不被误判成 GBK）",
+          _dec("中文正常".encode("utf-8")) == "中文正常", "UTF-8 内容被误判")
+    check("D9d 纯 ASCII 原样返回", _dec(b"git rc=0") == "git rc=0", "ASCII 被破坏")
+    check("D9e None / str 输入不抛异常", _dec(None) == "" and _dec("x") == "x", "入参处理异常")
+
     os.environ["GH_HOSTS_FILE"] = str(HOME / "no_dir" / "hosts")
     r = channel_hosts.apply({"github.com": ["1.2.3.4"]}, confirmed=True)
     check("D6 hosts 写入不可达 → 干净报错并给出替代出路",

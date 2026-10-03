@@ -339,7 +339,12 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 - stderr：一行人类摘要（`--quiet` 关闭）
 - 日志：用户区 `~/.github-access/logs/gh-YYYYMM.jsonl`（JSONL，永不写回包内）
 - 取用类命令（`get` / `git`）**成功时**报：命中通道 `channel`、命中源 `via`、是否经第三方 `third_party`、耗时 `elapsed`、落盘 `file`/`bytes`（git 为 `rc`/`out`/`err`）
-- 取用类命令**失败时**报：试过的每条通道与失败原因 `tried[]`、下一步建议 `next`、预算快照 `budget`（此时**没有** `channel`——没有通道成功，自然无命中通道）
+- 取用类命令**失败时**报：试过的每条通道与失败原因 `tried[]`、下一步建议 `next`、预算快照 `budget`（此时**没有** `channel`——没有通道成功，自然无命中通道）；
+  `git` 另报 **`err`**（最后一条通道的 git stderr 原文）——**失败原因必须可读**，不能只给一个 `rc=128`
+- **`next` 会区分病因**：命中认证类特征（`Permission to` / `Authentication failed` / `could not read Username` / `403`）时，
+  `next` 额外提示"这是凭据/授权问题，不是网络问题，换通道无用"；网络类失败则不提示，避免误导
+- **子进程输出按本地码页解码**：Windows 上 git / curl 的中文报错是 GBK(cp936) 而非 UTF-8，
+  统一走 `env_guard.decode_output()` 解码——**失败原因里不会出现乱码**
 - **怎么读 `budget.exceeded`**：`true` 表示已越过预算上限，该怀疑"超时/预算不够"，而不是"网络彻底不通"；可加大 `--deadline` 重试
 - 独立命令（`hosts` / `routes` / `update` / `diag`）按各自语义输出，不套用上面两条
 

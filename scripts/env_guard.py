@@ -5,11 +5,36 @@ git/curl 默认服从它——"直连明明通了、命令却仍然失败"多由
 """
 from __future__ import annotations
 
+import locale
 import os
 import shutil
 import sys
 
 PROXY_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy")
+
+
+def decode_output(raw) -> str:
+    """把子进程字节输出解码成文本：先严格试 UTF-8，失败再退到系统本地码页。
+
+    为什么必须这么做：Windows 上 git / curl 的**本地化**错误信息用的是 GBK(cp936)
+    等本地码页，不是 UTF-8。2026-10-03 实测踩坑：schannel 的中文报错被
+    `encoding="utf-8", errors="replace"` 解成一串 U+FFFD 替换字符，用户完全看不懂——
+    而这恰恰是最需要被读懂的失败原因。宁可猜错码页，也不能把错误信息变成乱码。
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    for enc in ("gbk", "mbcs", locale.getpreferredencoding(False), "latin-1"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", errors="replace")
 
 
 def clean_env() -> dict:

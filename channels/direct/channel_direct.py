@@ -49,17 +49,17 @@ def http_get(url: str, dest: Path, timeout: float, extra: list | None = None, bu
     args = (env_guard.curl_base(timeout, allow_proxy=allow_proxy)
             + ["-L", "--max-redirs", "5", "-o", str(dest), "-w", "%{http_code}", *extra, url])
     try:
-        p = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        p = subprocess.run(args, capture_output=True,
                            env=env_guard.clean_env(), timeout=timeout + 6)
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "curl 超时", "elapsed": round(time.perf_counter() - t0, 2)}
     except FileNotFoundError:
         return {"ok": False, "detail": "未找到 curl", "elapsed": 0.0}
-    code = (p.stdout or "").strip().splitlines()[-1:] or ["000"]
+    code = (env_guard.decode_output(p.stdout) or "").strip().splitlines()[-1:] or ["000"]
     # 只认 2xx：301/302 是"重定向说明"不是文件内容（fastly 域实测会 301 跳去 raw——曾把 3xx 当成功）
     ok = code[0].startswith("2") and dest.exists() and dest.stat().st_size > 0
     return {"ok": ok, "detail": "HTTP %s" % code[0], "elapsed": round(time.perf_counter() - t0, 2),
-            "err": (p.stderr or "").strip()[:160]}
+            "err": env_guard.decode_output(p.stderr).strip()[:160]}
 
 
 _BAD_PREFIXES = (b"404: not found", b"404 not found", b"couldn't find the requested file",
@@ -92,10 +92,12 @@ def git_run(args: list, cwd: str | None, timeout: float, budget=None) -> dict:
         return {"ok": False, "detail": "未安装 git", "elapsed": 0.0, "rc": -1, "out": "", "err": ""}
     cmd = ["git", *env_guard.git_config_prefix(), *args]
     try:
-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        # 不设 text=True：交给 decode_output 智能判码页（Windows 本地化报错是 GBK，非 UTF-8）
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True,
                            env=env_guard.clean_env(), timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "git 超时", "elapsed": round(time.perf_counter() - t0, 2),
                 "rc": 124, "out": "", "err": "timed out"}
-    return {"ok": p.returncode == 0, "rc": p.returncode, "out": p.stdout, "err": p.stderr,
+    return {"ok": p.returncode == 0, "rc": p.returncode,
+            "out": env_guard.decode_output(p.stdout), "err": env_guard.decode_output(p.stderr),
             "detail": "git rc=%d" % p.returncode, "elapsed": round(time.perf_counter() - t0, 2)}
