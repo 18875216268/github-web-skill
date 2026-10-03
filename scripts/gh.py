@@ -271,6 +271,32 @@ def cmd_get(args) -> int:
 
 
 # ---------------------------------------------------------------- git
+# 认证类失败与"网络不通"是两种病，处方完全不同：换通道对认证失败毫无用处。
+# 2026-10-03 实测踩坑：远端 403（凭据账号无写权限）时 next 仍说"可试 pin 通道"，
+# 而 pin 再试多少次也救不回来——所以这里按 stderr 判别并给出对症的出路。
+_AUTH_MARKERS = (
+    "permission to",            # remote: Permission to X.git denied to Y.
+    "authentication failed",
+    "authentication is required",
+    "could not read username",  # 缺凭据（非交互场景）
+    "invalid username or password",
+    "terminal prompts disabled",
+    "http basic: access denied",
+    "403",
+)
+
+
+def _auth_hint(err: str) -> str:
+    """stderr 命中认证类特征 → 返回对症提示；否则空串（不是认证问题就别误导）。"""
+    low = (err or "").lower()
+    if not any(m in low for m in _AUTH_MARKERS):
+        return ""
+    return ("；检测到认证/授权失败（不是网络问题，换通道无用）——"
+            "请检查 GitHub 凭据：确认已登录且该账号对目标仓库有写权限"
+            "（gh auth status 看账号；gh auth login 重新登录；"
+            "或改用 SSH remote / 有 repo scope 的 PAT）")
+
+
 def cmd_git(args) -> int:
     t0 = time.perf_counter()
     # REMAINDER 会把 --cwd/--force/--deadline/--exclude 一并吞进来：这里兜底解析（两种写法都成立）
@@ -324,6 +350,7 @@ def cmd_git(args) -> int:
         return finish({"action": "git", "ok": False,
                        "detail": "红线：写操作不允许强制走 mirror"}, args.quiet, 3)
     tried = []
+    last_err = ""
     base = [force] if force else chain_for(scenario)
     chain = [c for c in base if c not in excl]
     if not chain:
@@ -347,6 +374,8 @@ def cmd_git(args) -> int:
         r.setdefault("channel", ch)
         r.setdefault("third_party", routes["channels"].get(ch, {}).get("third_party") or False)
         tried.append({"channel": ch, "ok": bool(r.get("ok")), "detail": str(r.get("detail", ""))[:120]})
+        if not r.get("ok"):
+            last_err = str(r.get("err") or "")
         if r.get("ok"):
             bud.register_ok()
             out = {"action": "git", "ok": True, "channel": ch, "via": r.get("via"),
@@ -356,11 +385,12 @@ def cmd_git(args) -> int:
                    "budget": bud.snapshot(),
                    "detail": r.get("detail", ""), "tried": tried}
             return finish(out, args.quiet)
-    nxt = "gh.py diag 看环境事实；写操作可试 pin 通道" + _archive_hint(git_args)
+    nxt = "gh.py diag 看环境事实；写操作可试 pin 通道" + _archive_hint(git_args) + _auth_hint(last_err)
     return finish({"action": "git", "ok": False, "rc": 1,
                    "detail": "全部通道失败（写操作不经 mirror）" if write else "全部通道失败",
                    "elapsed": round(time.perf_counter() - t0, 2), "tried": tried,
                    "budget": bud.snapshot(),
+                   "err": last_err[-1500:],
                    "next": nxt}, args.quiet)
 
 

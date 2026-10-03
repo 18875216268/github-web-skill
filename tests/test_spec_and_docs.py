@@ -324,11 +324,40 @@ def main() -> int:
 
     cwd_dir = HOME / "cwdtest"
     cwd_dir.mkdir(parents=True, exist_ok=True)
+    # 技能包目录本身可能已是 git 仓库（本项目即如此），所以用"HEAD 是否被本次 init 改动"来判断
+    # --cwd 有没有被忽略——不能断言 .git 不存在。
+    _pkg_head = PKG / ".git" / "HEAD"
+    _before = _pkg_head.read_text(encoding="utf-8", errors="replace") if _pkg_head.is_file() else None
     rc, out = cli("git", "init", "--cwd", str(cwd_dir), "--force", "direct")
     check("D7 --cwd 写在 git 参数之后依然生效（工作目录落到该目录）",
           rc == 0 and (cwd_dir / ".git").exists(), "rc=%s out=%s" % (rc, out[:140]))
-    check("D7b --cwd 未被忽略（未在技能包目录里误建 .git）", not (PKG / ".git").exists(),
-          "技能包目录被误建 .git，说明 --cwd 被忽略")
+    _after = _pkg_head.read_text(encoding="utf-8", errors="replace") if _pkg_head.is_file() else None
+    check("D7b --cwd 未被忽略（技能包目录的 .git 未被本次 init 触碰）", _before == _after,
+          "技能包目录的 .git/HEAD 变了，说明 --cwd 被忽略")
+
+    # D8 认证类失败必须给出对症提示：换通道对 403/凭据问题毫无用处，不能再误导用户去试 pin。
+    # 用 AST 只抽取 _auth_hint 与 _AUTH_MARKERS 后独立执行——离线、确定性，且真的验证逻辑分支。
+    import ast
+    _tree = ast.parse(GH_SRC)
+    _picked = [n for n in _tree.body
+               if (isinstance(n, ast.FunctionDef) and n.name == "_auth_hint")
+               or (isinstance(n, ast.Assign)
+                   and any(getattr(t, "id", None) == "_AUTH_MARKERS" for t in n.targets))]
+    _ns = {}
+    exec(compile(ast.Module(body=_picked, type_ignores=[]), "<gh_extract>", "exec"), _ns)
+    _ah = _ns.get("_auth_hint")
+    check("D8 认证类 stderr 命中 → 给出检查凭据的对症提示",
+          _ah is not None and "凭据" in _ah("remote: Permission to x.git denied to y."),
+          "未识别 Permission denied")
+    check("D8b 凭据缺失类 stderr 命中 → 同样给出提示",
+          _ah is not None and "凭据" in _ah("fatal: could not read Username for 'https://github.com'"),
+          "未识别 could not read Username")
+    check("D8c 网络类 stderr 不得误报成认证问题（不制造误导）",
+          _ah is not None and _ah("fatal: unable to access 'https://github.com/': Connection was reset") == "",
+          "把网络故障误判成认证问题")
+    check("D8d git 全失败时输出必须带 err 字段（诚实报告失败原因）",
+          '"err": last_err[-1500:]' in GH_SRC,
+          "cmd_git 失败分支未输出 err")
 
     os.environ["GH_HOSTS_FILE"] = str(HOME / "no_dir" / "hosts")
     r = channel_hosts.apply({"github.com": ["1.2.3.4"]}, confirmed=True)
