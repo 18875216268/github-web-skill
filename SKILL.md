@@ -1,15 +1,20 @@
 ---
 name: github-web-skill
-version: "2.2.2"
+version: "2.2.3"
 display_name: "访问GitHub网络"
 display_name_en: "GitHub Access Layer"
 description: "帮助用户轻松访问 GitHub 网络，突破GitHub网络限制（GitHub限速、无法访问等），特别是当遇上 git clone / pull / push 失败或超时、raw 文件与 Release 资产下载不动、github.com 打不开、浏览器进不去、DNS 污染导致解析到错误 IP、公司网络与校园网屏蔽 GitHub、代理环境变量让命令莫名失败、网速慢拉不动仓库等情况时，本技能可快速提供 GitHub 一键加速、github 镜像站自动切换、修改 hosts 修复浏览器访问、受限网络下 clone 仓库与下载文件等能力！实现多源、多通道智能路由，按你的网络情况个性化制定访问方案，全流程自动择优、失败自动换路，结果如实报告、改系统随时可回滚。"
-description_zh: "帮助用户轻松访问 GitHub，突破网络限制（限速、无法访问等），如遇连不上、clone 失败超时、文件与 Release 下载卡住、github.com 打不开、浏览器进不去、DNS 污染、公司网络与校园网屏蔽、代理干扰时，可实现多源多通道智能路由，并提供一键加速、镜像站自动切换、修改 hosts 等能力，失败自动换路、自动择优、如实报告、改 hosts 可回滚，访问 GitHub 无忧。"
+description_zh: "帮助用户轻松访问 GitHub，突破网络限制（限速、无法访问等）！让GitHub访问变得更加迅捷。如遇连不上、clone 失败超时、文件与 Release 下载卡住、github.com 打不开、浏览器进不去、DNS 污染、公司网络与校园网屏蔽、代理干扰时，可实现多源多通道智能路由，并提供一键加速、镜像站自动切换、修改 hosts 等能力，失败自动换路、自动择优、如实报告、改 hosts 可回滚，为用户稳定访问GitHub保驾护航。"
 description_en: "Reach GitHub on restricted networks: clone and pull repos, download files and releases, fix a browser that cannot open github.com. 95 sources across 6 channels, routed automatically — fastest first, automatic failover, hosts changes reversible."
-triggers:
-  - 帮我下载 GitHub 上的 xxx 项目
+triggers: 帮我下载 GitHub 上的 github-web-skill 项目；浏览器 GitHub 访问不了，请为我修复；部署项目到 GitHub 时 git push 连不上/推送失败
+examples_zh:
+  - 帮我下载 GitHub 上的 github-web-skill 项目
   - 浏览器 GitHub 访问不了，请为我修复
-  - 部署项目到 GitHub 时 git push 连不上 / 推送失败
+  - 部署项目到 GitHub 时 git push 连不上/推送失败
+examples_en:
+  - Download the github-web-skill project from GitHub for me
+  - My browser can't open GitHub — please fix my access
+  - git push to GitHub fails or times out when I deploy my project
 license: "MIT"
 compatibility: "需要 Python 3.10+（仅标准库）与系统 git/curl；需要出网（GitHub 官方端点、媒体 CDN、第三方镜像池、公共 DoH、外部 hosts 清单源与官方段闸——全部登记于资源层 sources.json）；hosts 通道需管理员权限。"
 metadata:

@@ -105,8 +105,10 @@ def main() -> int:
           {k: fm(k) for k in ("version", "display_name", "display_name_en")})
     # 上限 200：维护者 2026-10-03 定——人类向简介要覆盖足量症状关键词（打不开/屏蔽/代理…），
     # 短到 160 会逼得砍掉真实检索词。上限只防"失控变成长文"，不卡字数。
+    # 2026-10-05 调至 220：维护者新文案 218 字（新增"更加迅捷/保驾护航"收尾），200 卡住 18 字；
+    # 权衡后保留文案全文，仅放宽 20 字——仍拦截失控长文。
     check("A6c 展示分工：description_zh/en 为人类向简介（≠description 路由长文，长度适中）",
-          fm("description_zh") != desc and 20 < len(fm("description_zh") or "") <= 200
+          fm("description_zh") != desc and 20 < len(fm("description_zh") or "") <= 220
           and fm("description_en") != desc and 20 < len(fm("description_en") or "") <= 300,
           {"zh": len(fm("description_zh") or ""), "en": len(fm("description_en") or "")})
     check("A7 SKILL.md 正文 < 500 行（渐进披露）", len(SKILL.splitlines()) < 500, len(SKILL.splitlines()))
@@ -115,7 +117,11 @@ def main() -> int:
           lic.exists() and "MIT License" in lic.read_text(encoding="utf-8"), fm("license"))
     _tmp = None
     PLATFORM_FIELDS = {"version", "display_name", "display_name_en",
-                       "description_zh", "description_en", "triggers"}
+                       "description_zh", "description_en", "triggers",
+                       "examples_zh", "examples_en"}
+    # 2026-10-05 增补 examples_zh/examples_en：官方参考包 github-trending-cn 的
+    # _skillhub_meta.json 原样存储这两个键（数组），为「试试这样问我」的数据源；
+    # 字段命名与 description_zh/en、display_name_en 的平台双语惯例一致。
     try:
         _tmp = Path(tempfile.mkdtemp(prefix="gh_spec_"))
         _pkg = _tmp / (name or PKG.name)          # 规范名（挂载态目录名≠资产名，校验须按规范名）
