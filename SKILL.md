@@ -302,7 +302,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | --- | --- |
 | `--force <通道>` | 只走指定通道（只接受**有实现**的 `direct`/`pin`/`mirror`/`cdn`；写操作禁 `mirror`，会被红线拒绝） |
 | `--exclude <通道,...>` | 裁剪当前场景链（与 `--force` 互斥；排除后链空则如实失败） |
-| `--deadline <秒>` | 整体时间预算（默认 get 60s / git 180s / update 60s；预算不足即停止并留痕） |
+| `--deadline <秒>` | 整体时间预算（默认 get 60s / git 180s / update 60s；预算不足即停止并留痕）。**仅 get / git / update 接受此参数**——diag / hosts / routes 不需要预算，不认它 |
 | `--ref <分支/标签>` | 取文件（`get`）或更新（`update`）时的引用，默认 `main`；正式判定建议用 tag/commit 固定 |
 | `--url <https 链接>` | `get` 取任意官方/第三方 https 链接（Release 资产、codeload 等）；此时不走 CDN |
 | `--dest <文件>` | 输出落盘路径（不指定则落到用户区 cache 目录） |
