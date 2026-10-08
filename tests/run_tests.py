@@ -22,6 +22,15 @@ SUITE = ["test_spec_and_docs.py", "test_quality.py", "test_probe.py", "test_budg
          "test_channels_transport.py"]
 SMOKE = "test_readonly_smoke.py"
 
+# 注册一致性闸：SUITE + SMOKE 必须恰好覆盖目录内全部 test_*.py
+# （2026-10-08 实证：写死清单漏注册新测试文件 → 测试静默不生效）
+_on_disk = sorted(p.name for p in TESTS.glob("test_*.py"))
+_registered = sorted(set(SUITE) | {SMOKE})
+if _on_disk != _registered:
+    raise SystemExit("测试注册不一致：目录有而清单无=%s；清单有而目录无=%s"
+                     % (sorted(set(_on_disk) - set(_registered)),
+                        sorted(set(_registered) - set(_on_disk))))
+
 
 def main() -> int:
     offline = "--offline" in sys.argv

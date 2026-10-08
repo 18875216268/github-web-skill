@@ -151,7 +151,7 @@ github-web-skill/
 | git 只读 | **第 1 顺位** | 第 2 顺位 | — | 第 3 顺位 | 不支持 git | — | ✅ 失败时提供（需 key） | ✅ 失败时提供 |
 | git 写（push/tag） | **第 1 顺位** | 第 2 顺位 | — | **禁用**（红线） | 不支持 git | — | ✅ 失败时提供（第三条写逃生路） | ✅ 失败时提供 |
 | 解析失败 / 连接劣化 | — | **第 1 顺位** | 第 2 顺位（需授权） | 第 3 顺位 | — | — | ✅ git 语境提供（独立域无 SNI） | ✅ 失败时提供 |
-| 人打不开（浏览器） | — | — | **唯一手段** | — | — | — | — | 💡 仅提示（浏览器侧自配） |
+| 人打不开（浏览器） | — | — | **唯一手段** | — | — | — | — | —（浏览器代理属系统设置，不代配） |
 | 全部失败 | — | — | — | — | — | **链尾兜底** | ✅ 最后的救命稻草（若门开） | ✅ 最后的救命稻草（若探活通） |
 
 读法：**同一件事在不同场景下走的是不同的通道序列**——所以本技能不是"一条固定降级链"，
@@ -288,7 +288,7 @@ githubfast.com · hub.yzuu.cf · github.hscsec.cn · hub.nuaa.cf · hub.gitfast.
 | 查远端版本 / 分支 | `python scripts/gh.py git ls-remote <仓库URL> HEAD` |
 | 取仓库里某个文件 | `python scripts/gh.py get owner/repo:path/to/file.txt [--ref main]` |
 | 取 Release 资产 / 任意官方下载 | `python scripts/gh.py get --url https://github.com/…/releases/download/…` |
-| 先看环境能走哪条通道 | `python scripts/gh.py diag`（`--full` 并发探活：镜像探 HTTP 能力、IP 每域前 2 个） |
+| 先看环境能走哪条通道 | `python scripts/gh.py diag`（`--full` 并发探活：镜像探 HTTP 能力、IP 每域前 2 个、SSH 双门连通） |
 | 排障：只走某条通道 | `get` / `git` 加 `--force direct|pin|mirror|cdn`（写操作禁 `mirror`） |
 | 策略约束：排除某些通道 | `get` / `git` 加 `--exclude mirror,cdn`（与 `--force` 互斥；如"不要经第三方"） |
 | clone 全链失败、但只要代码 | 看失败报告的 `next` 建议——改取 codeload 归档（zip 快照，无 git 历史） |
@@ -325,11 +325,11 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | `--ref <分支/标签>` | 取文件（`get`）或更新（`update`）时的引用，默认 `main`；正式判定建议用 tag/commit 固定 |
 | `--url <https 链接>` | `get` 取任意官方/第三方 https 链接（Release 资产、codeload 等）；此时不走 CDN |
 | `--dest <文件>` | 输出落盘路径（不指定则落到用户区 cache 目录） |
-| `--proxy <URL>` | `get` / `git` 用户自有出口（仅无认证 http/https/socks5；**优先级最高、不走链**，失败不静默回退而是重新给选项）。环境检测到代理时**绝不自动使用**——只经探活后作为选项呈现 |
+| `--proxy <URL>` | `get` / `git` 用户自有出口（仅无认证 http/https/socks5(h)；**优先级最高、不走链**，失败不静默回退而是重新给选项）。环境检测到代理时**绝不自动使用**——只经探活后作为选项呈现 |
 | `--transport ssh` | `git` 调用级改写 https→ssh（**仅本次调用**，不碰 remote/key）。与 `--proxy` 互斥；门不可达时如实失败 |
 | `--prefer-ssh` | `git` 声明偏好：SSH 门可达即优先走 SSH，门未开自动按链走并注明；与 `--transport` 二选一 |
 | `--cwd <目录>` | `git` 子命令的工作目录 |
-| `--full` | `diag` 附带并发探活：镜像按 HTTP 能力、IP 每域前2 个（**非全量**） |
+| `--full` | `diag` 附带并发探活：镜像按 HTTP 能力、IP 每域前2 个（**非全量**）、SSH 双门连通性 |
 | `--flush` | `hosts --apply` 后刷新 DNS 缓存——**仅 Windows 生效**（其它平台传了也不报错但不做任何事） |
 | `--quiet` | 关闭 stderr 的人类摘要（stdout 的 JSON 不变） |
 
@@ -340,7 +340,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 
 | offer | 出现场景 | 探活前置 | 前提标注 |
 | --- | --- | --- | --- |
-| `proxy` | 任一取用失败 + 环境检测到代理变量 | 用该代理实测取数（≤5s），通才出现，附实测延迟 | 走你的自有出口 |
+| `proxy` | **自动链失败** + 环境检测到代理变量 | 用该代理实测取数（≤5s），通才出现，附实测延迟 | 走你的自有出口 |
 | `ssh` | **仅 git 语境**失败（raw/浏览器不走 SSH） | 双门探测（22 / ssh.github.com:443），至少一门通 | 需你已配置 SSH key（凭证归你，本技能零接触） |
 
 规则：环境检测到代理 ≠ 自动使用（环境状态 ≠ 用户意愿）；每一次传输选择都可追溯到一次

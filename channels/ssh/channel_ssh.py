@@ -24,9 +24,15 @@ TIMEOUT = 6.0          # 单端点 TCP 连接超时（秒）——与治理层�
 
 
 def endpoints() -> list:
-    """读取 kinds.ssh.endpoints（数据与探测解耦：改 sources.json 即生效）。"""
-    d = json.loads(SRC_F.read_text(encoding="utf-8"))
-    return d["kinds"]["ssh"]["endpoints"]
+    """读取 kinds.ssh.endpoints（数据与探测解耦：改 sources.json 即生效）。
+
+    源文件缺失/损坏时返回 []（结构化降级，不抛异常——stdout JSON 契约优先）。
+    """
+    try:
+        d = json.loads(SRC_F.read_text(encoding="utf-8"))
+        return d["kinds"]["ssh"]["endpoints"]
+    except (OSError, ValueError, KeyError):
+        return []
 
 
 def probe(timeout: float = TIMEOUT) -> dict:
@@ -34,16 +40,21 @@ def probe(timeout: float = TIMEOUT) -> dict:
 
     返回 {"ok": 任一端点可达, "endpoints": [{name, host, port, ok, ms[, err]}]}。
     """
+    eps = endpoints()
+    if not eps:
+        return {"ok": False, "endpoints": [],
+                "err": "SSH 端点源读取失败（kinds.ssh 缺失或损坏）"}
     out = []
-    for ep in endpoints():
+    for ep in eps:
         t0 = time.perf_counter()
         ok, err = False, ""
         try:
-            with socket.create_connection((ep["host"], ep["port"]), timeout=timeout):
+            with socket.create_connection((ep["host"], int(ep["port"])), timeout=timeout):
                 ok = True
-        except OSError as exc:
+        except Exception as exc:                 # socket/数值/解析类失败统一记事实，不抛
             err = type(exc).__name__
-        rec = {"name": ep["name"], "host": ep["host"], "port": ep["port"],
+        rec = {"name": ep.get("name", "?"), "host": ep.get("host", "?"),
+               "port": ep.get("port", "?"),
                "ok": ok, "ms": round((time.perf_counter() - t0) * 1000)}
         if err:
             rec["err"] = err

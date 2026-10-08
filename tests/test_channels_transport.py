@@ -17,12 +17,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG = HERE.parent
 SCRIPTS = PKG / "scripts"
+_UHOME = os.path.join(os.environ["TEMP"], "gws_t_uhome")   # 测试用户区（隔离真实 ~/.github-access）
+os.makedirs(_UHOME, exist_ok=True)
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(PKG / "channels" / "proxy"))   # channel_proxy.validate 供进程内单测
 
 
 def gh(*args, timeout=90):
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    # 用户区隔离（不写真实 ~/.github-access）+ 代理清空（探活/offers 不受环境噪声影响）
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+           "GH_ACCESS_HOME": _UHOME,
+           "HTTP_PROXY": "", "HTTPS_PROXY": "", "http_proxy": "", "https_proxy": "",
+           "ALL_PROXY": "", "all_proxy": ""}
     p = subprocess.run([sys.executable, str(SCRIPTS / "gh.py"), *args],
                        capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=timeout, env=env, cwd=str(PKG))
@@ -80,8 +86,9 @@ class TestSshStatusCli(unittest.TestCase):
     """gh.py ssh --status：零凭证探测，只验 JSON 结构（不验网络结果）。"""
 
     def test_status_shape(self):
+        """只验结构不验网络：门可达→rc0，不可达→rc1，两者都合法。"""
         rc, out, err = gh("ssh", "--status")
-        self.assertEqual(rc, 0, err[:120])
+        self.assertIn(rc, (0, 1), err[:120])
         d = json.loads(out)
         self.assertEqual(d.get("action"), "ssh.status")
         self.assertEqual(d.get("channel"), "ssh")
@@ -95,6 +102,41 @@ class TestSshStatusCli(unittest.TestCase):
     def test_ssh_without_args_is_usage_error(self):
         rc, _out, _err = gh("ssh")
         self.assertEqual(rc, 3)
+
+
+class TestDiagSshProbe(unittest.TestCase):
+    """diag --full 必须携带 ssh_probe（双端点结构）。"""
+
+    def test_diag_full_has_ssh_probe(self):
+        rc, out, _err = gh("diag", "--full", timeout=300)
+        self.assertEqual(rc, 0, out[:160])
+        d = json.loads(out)
+        sp = (d.get("checks") or {}).get("ssh_probe") or {}
+        eps = sp.get("endpoints") or []
+        self.assertEqual(len(eps), 2)
+        for e in eps:
+            self.assertIn("ok", e)
+            self.assertIn("ms", e)
+
+
+class TestOffersShape(unittest.TestCase):
+    """offers 契约（环境容忍：门开才有 ssh 选项；无代理环境无 proxy 选项）。"""
+
+    def test_git_failure_offers_are_wellformed(self):
+        d = os.path.join(os.environ["TEMP"], "gws_offer_dir")
+        os.makedirs(d, exist_ok=True)
+        rc, out, _err = gh("git", "push", "origin", "main",
+                           "--cwd", d, "--deadline", "30")
+        self.assertIn(rc, (1, 2))
+        body = json.loads(out)
+        self.assertFalse(body.get("ok"))
+        offers = body.get("offers") or []
+        for o in offers:
+            self.assertIn(o.get("id"), ("ssh", "proxy", "chain"))
+            self.assertTrue(o.get("evidence"))
+            self.assertTrue(str(o.get("retry", "")).startswith("gh.py"))
+        self.assertEqual(body.get("need_confirm"), bool(offers))
+        self.assertEqual(rc, 2 if offers else 1)
 
 
 class TestProxyChannel(unittest.TestCase):

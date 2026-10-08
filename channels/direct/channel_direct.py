@@ -99,7 +99,9 @@ def git_run(args: list, cwd: str | None, timeout: float, budget=None,
     cmd = ["git", *env_guard.git_config_prefix(), *args]
     env = env_guard.clean_env()
     if proxy:
-        env["HTTP_PROXY"] = env["HTTPS_PROXY"] = proxy
+        # 大小写双写（Linux 下 libcurl 惯例只认小写 http_proxy）+ ALL_PROXY 兜底 socks5(h)
+        env["HTTP_PROXY"] = env["HTTPS_PROXY"] = env["http_proxy"] = env["https_proxy"] = proxy
+        env["ALL_PROXY"] = env["all_proxy"] = proxy
     try:
         # 不设 text=True：交给 decode_output 智能判码页（Windows 本地化报错是 GBK，非 UTF-8）
         p = subprocess.run(cmd, cwd=cwd, capture_output=True,

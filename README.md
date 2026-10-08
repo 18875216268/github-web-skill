@@ -90,9 +90,9 @@ github-web-skill/
 ① 路由层  routes/routes.json（唯一事实源）→ ROUTES.md（渲染产物）；gh.py routes --check 双向对账
 ② 资源层  sources/（纯外部源，每次全新拉取）：hub.py 三池管道（并发获取 → 统一测速 → Top10）
           + collect.py 双模式聚合（登记型 / fetch 驱动型，数据分派）+ speedtest.py 策略注入测速；
-          sources.json 为唯一数据文件：ip（hosts_file / doh / gh_meta）· mirror（68）· cdn（13）
-③ 通道层  channels/（6 条，一通道一文件夹：实现 + 内部降级链 README；互不知道对方存在）——
-          pin / hosts 为纯应用通道（零获取逻辑，只消费资源层供给）
+          sources.json 为唯一数据文件：ip（hosts_file / doh / gh_meta）· mirror（68）· cdn（13）· ssh（2 官方端点）
+③ 通道层  channels/（8 条，一通道一文件夹：实现 + 内部降级链 README；互不知道对方存在）——
+          pin / hosts 为纯应用通道（零获取逻辑，只消费资源层供给）；ssh / proxy 不进自动链（见各自 README）
 ④ 治理层  scripts/（唯一 CLI 是 gh.py，另有 budget 预算 · env_guard 环境守卫 · probe 并发探测与源账本·
           report 报告 · lines 常量）——所有通道共用，通道不得绕过
 ⑤ 更新层  update/（仅显式调用 gh.py update：check 只读检测 / apply 需 --yes：
@@ -111,7 +111,7 @@ github-web-skill/
 
 ## 4. 通道层
 
-### 4.1 通道总表（6 条，按"改动了什么"分类）
+### 4.1 通道总表（8 条，按"改动了什么"分类）
 
 | 通道 | 别名（你可能会搜） | 本质（改动了什么） | 适合什么 | 前提与副作用 | 第三方 | 授权 | 支持 git |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -121,6 +121,8 @@ github-web-skill/
 | `mirror` | 镜像站、镜像、中转 | 换入口：第三方转发代理池（并发探活择优 + 健康账本冷却） | 只读兜底（直连与钉 IP 都失败时） | 流量经第三方；各镜像对 git 支持参差 | 是 | 免（报告注明） | 是（61 = 58 前缀式 + 3 换主机式） |
 | `cdn` | 加速节点、边缘缓存 | 换内容来源：媒体 CDN 边缘缓存（并发探活择优） | 只读**单个文件**（manifest / README / 小配置） | 只读；分支引用有缓存滞后（正式判定用 tag/commit 固定） | 是 | 免 | 否 |
 | `offline` | 离线兜底 | 不联网 | **约定态**（无实现文件）：全链失败时的链尾——如实报告失败 + 给出下一步建议 | 不实时、不含任何预置数据 | 否 | 免 | 不适用 |
+| `ssh` | SSH、22 端口、ssh.github.com | 换传输协议：git 走 SSH（无 SNI、独立端口，HTTPS 被针对性阻断时的逃生族） | **探测双门连通性**（零凭证）；git 语境失败时作为替代传输出现在 offers | 不进自动链；实际走 SSH 需用户自行配置 key（凭证归本通道零接触） | 否（github.com 本尊） | 探测免 / 使用需用户自有 key | 是（仅 git 操作） |
+| `proxy` | 用户代理、自有梯子、本地代理 | 换出口：流量经**用户自己的代理**（非共享第三方） | 自有梯子用户的最优路径；显式 `--proxy` 传入即用户已决定 | 仅无认证地址（带凭证直接拒绝）；优先级最高、不走链、失败不静默回退 | 否（用户自有） | 免（显式参数即决定） | 是 |
 
 > 传输量乘数：git 只读默认 `shallow`（`clone` 自动 `--depth 1`）——它是参数，不是通道。
 > **别名速查**：加速器 / 梯子 / 稳定访问 → 通道；镜像站 / 镜像 / 中转 → `mirror`；钉 IP / 换 IP / 固定 IP / 绑 IP → `pin`；图快 / 加速节点 / 边缘缓存 → `cdn`；降级 / 兜底 / fallback / 换一条路试 → 场景路由；探活 / 测速 / 择优 → 资源层测速 + 健康账本。
@@ -128,14 +130,14 @@ github-web-skill/
 
 ### 4.2 通道 × 场景 交叉矩阵（哪条通道在哪些场景会被用到）
 
-| 场景 \ 通道 | `direct` | `pin` | `hosts` | `mirror` | `cdn` | `offline` |
-| --- | --- | --- | --- | --- | --- | --- |
-| 取单个文件 | 第 2 顺位 | 第 3 顺位 | — | 第 4 顺位 | **第 1 顺位** | — |
-| git 只读 | **第 1 顺位** | 第 2 顺位 | — | 第 3 顺位 | 不支持 git | — |
-| git 写（push/tag） | **第 1 顺位** | 第 2 顺位 | — | **禁用**（红线） | 不支持 git | — |
-| 解析失败 / 连接劣化 | — | **第 1 顺位** | 第 2 顺位（需授权） | 第 3 顺位 | — | — |
-| 人打不开（浏览器） | — | — | **唯一手段** | — | — | — |
-| 全部失败 | — | — | — | — | — | **链尾兜底** |
+| 场景 \ 通道 | `direct` | `pin` | `hosts` | `mirror` | `cdn` | `offline` | `ssh`（offers） | `proxy`（offers） |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 取单个文件 | 第 2 顺位 | 第 3 顺位 | — | 第 4 顺位 | **第 1 顺位** | — | —（raw 不走 SSH） | ✅ 失败时提供 |
+| git 只读 | **第 1 顺位** | 第 2 顺位 | — | 第 3 顺位 | 不支持 git | — | ✅ 失败时提供（需 key） | ✅ 失败时提供 |
+| git 写（push/tag） | **第 1 顺位** | 第 2 顺位 | — | **禁用**（红线） | 不支持 git | — | ✅ 失败时提供（第三条写逃生路） | ✅ 失败时提供 |
+| 解析失败 / 连接劣化 | — | **第 1 顺位** | 第 2 顺位（需授权） | 第 3 顺位 | — | — | ✅ git 语境提供（独立域无 SNI） | ✅ 失败时提供 |
+| 人打不开（浏览器） | — | — | **唯一手段** | — | — | — | — | —（浏览器代理属系统设置，不代配） |
+| 全部失败 | — | — | — | — | — | **链尾兜底** | ✅ 最后的救命稻草（若门开） | ✅ 最后的救命稻草（若探活通） |
 
 读法：**同一件事在不同场景下走不同的通道序列**——所以本技能不是"一条固定降级链"，
 而是「按场景选定候选通道 → 通道内并发择优 → 这条不通才换下一条」。**写操作那一行的 `mirror` 是空的，这是红线。**
@@ -147,7 +149,7 @@ github-web-skill/
 
 ## 5. 资源层
 
-### 5.1 总览：3 大类 · 95 个源
+### 5.1 总览：4 大类 · 95 个源 + 2 个官方 SSH 端点
 
 `sources.json` 是唯一数据文件；每条通道在 `routes/routes.json` 里声明自己消费哪类供给（`kinds` 字段）。
 `gh.py routes --check` 做**正向硬校验**（通道声明的 `kinds` 必须真实存在于资源层）+ **反向软提示**（登记了却无通道消费的，只写进 `detail`、不影响退出码）。
@@ -217,7 +219,11 @@ github-web-skill/
 | 查远端版本 / 分支 | `python scripts/gh.py git ls-remote <仓库URL> HEAD` |
 | 取仓库里某个文件 | `python scripts/gh.py get owner/repo:path/to/file.txt [--ref main]` |
 | 取 Release 资产 / 任意官方下载 | `python scripts/gh.py get --url https://github.com/…/releases/download/…` |
-| 先看环境能走哪条通道 | `python scripts/gh.py diag`（`--full` 并发探活：镜像探 HTTP 能力、IP 每域前 2 个） |
+| 先看环境能走哪条通道 | `python scripts/gh.py diag`（`--full` 并发探活：镜像探 HTTP 能力、IP 每域前 2 个、SSH 双门连通） |
+| SSH 门开没开（零凭证） | `python scripts/gh.py ssh --status`（探测 github.com:22 与 ssh.github.com:443） |
+| git 走我自己的代理 | `get` / `git` 加 `--proxy http://127.0.0.1:7890`（仅无认证地址；优先级最高、不走链） |
+| git 改走 SSH 传输（本次调用） | `git` 加 `--transport ssh`（需你已配置 key；调用级改写，不碰 remote） |
+| 声明偏好：以后 git 优先走 SSH | `git` 加 `--prefer-ssh`（门可达即优先；门未开自动按链走并注明） |
 | 排障：只走某条通道 | `get` / `git` 加 `--force direct\|pin\|mirror\|cdn` |
 | 策略约束：不经第三方 | `get` / `git` 加 `--exclude mirror,cdn` |
 | clone 全链失败、但只要代码 | 看失败报告的 `next` 建议——改取 codeload 归档（zip 快照，无 git 历史） |
@@ -230,8 +236,10 @@ github-web-skill/
 ```text
 python scripts/gh.py diag [--full]                                 # 只读诊断（各通道可用性事实）
 python scripts/gh.py get <owner>/<repo>:<path> [--ref R] [--dest F] [--deadline S] [--force CH] [--exclude CH,CH]
-python scripts/gh.py get --url <https 链接>                         # raw / Release 资产 / codeload 等
+python scripts/gh.py get --url <https 链接> [--proxy URL]           # raw / Release 资产 / codeload 等
 python scripts/gh.py git <git 参数...> [--cwd D] [--deadline S] [--force CH] [--exclude CH,CH]   # 包裹 git（自动守卫+预算+降级）
+python scripts/gh.py git ... [--proxy URL] [--transport ssh] [--prefer-ssh]    # 用户自有出口 / SSH 传输
+python scripts/gh.py ssh --status                                  # SSH 双端点连通性（零凭证）
 python scripts/gh.py hosts --status | --apply --yes [--flush] | --rollback
 python scripts/gh.py routes --check | --render                     # 路由表校验 / 重绘
 python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层（仅显式调用，从不自检）
@@ -250,7 +258,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | `--flush` | `hosts --apply` 后刷新 DNS 缓存——**仅 Windows 生效** |
 | `--quiet` | 关闭 stderr 的人类摘要（stdout 的 JSON 不变） |
 
-退出码：`0` 成功 ｜ `1` 失败（未成功——含全通道失败、`routes --check` 校验不通过、`update --check` 拉不到远端）｜ `2` 需要授权（hosts / update --apply）｜ `3` 用法错误。
+退出码：`0` 成功 ｜ `1` 失败（未成功——含全通道失败、`routes --check` 校验不通过、`update --check` 拉不到远端）｜ `2` 需要授权/确认（hosts、update --apply、**失败时的 offers 选项**）｜ `3` 用法错误。
 
 ### 6.4 两种使用姿势
 
@@ -290,7 +298,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 
 ## 9. 已知边界
 
-- **不碰账号**：不支持 SSH 推送、私有仓库、GitHub Packages 的 token 下载——需你自行配置凭证；本技能只处理"网络怎么通"。
+- **不碰账号**：SSH **凭证**归你（key 由你生成与保管，本技能零接触）；私有仓库、GitHub Packages 的 token 下载需你自行配置凭证——本技能只处理"网络怎么通"。SSH 传输的**连通性事实**由 `ssh` 通道提供（`gh.py ssh --status`，零凭证）；是否走 SSH 由你决定（`--transport ssh` / `--prefer-ssh`，调用级生效、不碰 remote 配置）。用户代理（`--proxy`）仅收无认证地址——凭证不经过本技能。
 - **不上传写操作**：`push` 等写操作永不经过第三方镜像（路由表登记 + 运行时拦截 + 验收用例三重锁）；只读走第三方时会标 `third_party`。
 - **Windows 上关闭了证书吊销检查**（`http.schannelCheckRevoke=false`）以换取连通性——**安全换可用性**的取舍。
 - `cdn` 只读且不替代 git；分支引用可能滞后，请用 tag/commit 固定。

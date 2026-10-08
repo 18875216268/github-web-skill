@@ -10,7 +10,8 @@ import os
 import shutil
 import sys
 
-PROXY_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy")
+PROXY_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy",
+              "NO_PROXY", "no_proxy")   # NO_PROXY 存活会让显式代理被静默旁路，一并清除
 
 
 def decode_output(raw) -> str:

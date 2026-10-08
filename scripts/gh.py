@@ -131,6 +131,13 @@ _DROP_VALUE = ("--proxy", "--transport")       # 带值的 flag（摘除时连�
 _DROP_BOOL = ("--prefer-ssh",)                 # 布尔 flag
 
 
+def _q(a: str) -> str:
+    """重建命令行时的参数转义：含空白/特殊字符的参数加引号（保证 retry 可直接重跑）。"""
+    if a and not any(c.isspace() or c in '"<>|&;()$`\\' for c in a):
+        return a
+    return '"' + a.replace('"', '\\"') + '"'
+
+
 def _base_cmd(drop_value=_DROP_VALUE, drop_bool=_DROP_BOOL) -> str:
     """重建当前命令行（可摘除指定 flag），作为 offer 的可重跑命令基座。"""
     argv, skip = [], False
@@ -143,29 +150,42 @@ def _base_cmd(drop_value=_DROP_VALUE, drop_bool=_DROP_BOOL) -> str:
             continue
         if a in drop_bool:
             continue
-        argv.append(a)
+        argv.append(_q(a))
     return "gh.py " + " ".join(argv)
 
 
 def _proxy_offer() -> dict | None:
-    """环境代理检测 → 探活 → 通过才成为选项（证据=实测延迟；死路不推荐）。"""
-    urls = [v for v in env_guard.proxy_state().values() if v and "@" not in v]
+    """环境代理检测 → 校验 → 探活 → 通过才成为选项（证据=实测延迟；死路不推荐）。"""
+    urls = []
+    for v in env_guard.proxy_state().values():
+        v = (v or "").strip()
+        if v and "@" not in v and v not in urls:
+            okp, _why = _CH["proxy"].validate(v)
+            if okp:
+                urls.append(v)
+    if not urls:
+        return None
+    dest = report.HOME / "cache" / "_offer.bin"
+    dest.parent.mkdir(parents=True, exist_ok=True)   # git 路径首跑时 cache 可能尚不存在
     for u in urls:
-        pr = _CH["direct"].http_get("https://github.com/",
-                                    report.HOME / "cache" / "_offer.bin", 5,
-                                    extra=["-x", u])
+        pr = _CH["direct"].http_get("https://github.com/", dest, 5, extra=["-x", u])
         if pr.get("ok"):
             return {"id": "proxy", "kind": "用户自有出口（环境检测）",
                     "evidence": "代理探活 HTTP 200（%ss）" % pr.get("elapsed"),
-                    "retry": "%s --proxy %s" % (_base_cmd(), u)}
+                    "retry": "%s --proxy %s" % (_base_cmd(), _q(u))}
     return None
 
 
-def _ssh_offer(git_args: list) -> dict | None:
-    """SSH 门探测 → 通才成为选项（仅 git 对象操作；raw/release 不走 SSH）。"""
-    if not (git_args and git_args[0] in {"clone", "fetch", "pull", "push", "ls-remote"}):
+def _ssh_offer(git_args: list, sp: dict | None = None) -> dict | None:
+    """SSH 门探测 → 通才成为选项（仅 git 对象操作；raw/release 不走 SSH）。
+
+    sp：调用方已探测过的结果（如 --prefer-ssh 路径）——传入则复用，避免二次探测阻塞。
+    """
+    if not (git_args and git_args[0] in
+            {"clone", "fetch", "pull", "push", "ls-remote", "submodule"}):
         return None
-    sp = _CH["ssh"].probe()
+    if sp is None:
+        sp = _CH["ssh"].probe()
     if not sp.get("ok"):
         return None
     doors = "、".join("%s%s" % (e["name"], "✓" if e["ok"] else "✗")
@@ -415,9 +435,12 @@ def cmd_git(args) -> int:
             i += 1
             continue
         if raw_args[i] == "--force" and i + 1 < len(raw_args):
-            force = raw_args[i + 1]
-            i += 2
-            continue
+            # 精确剥离：仅当下一个值确为已注册通道名才算技能 flag；
+            # 否则（如 `git push --force origin main`）原样透传给 git
+            if raw_args[i + 1] in _CH:
+                force = raw_args[i + 1]
+                i += 2
+                continue
         if raw_args[i] == "--exclude" and i + 1 < len(raw_args):
             exclude = raw_args[i + 1]
             i += 2
@@ -436,6 +459,26 @@ def cmd_git(args) -> int:
     excl, err = _parse_exclude(exclude, force)
     if err:
         return finish({"action": "git", "ok": False, "detail": err}, args.quiet, 3)
+    # ---- ssh / proxy 参数校验与互斥（先于场景链；语义冲突直接退 3）----
+    if proxy:
+        proxy = proxy.strip()
+        okp, why = _CH["proxy"].validate(proxy)
+        if not okp:
+            return finish({"action": "git", "ok": False, "detail": why}, args.quiet, 3)
+    if transport and transport != "ssh":
+        return finish({"action": "git", "ok": False,
+                       "detail": "--transport 仅支持 ssh（收到：%s）" % transport}, args.quiet, 3)
+    if transport and proxy:
+        return finish({"action": "git", "ok": False,
+                       "detail": "--transport ssh 与 --proxy 互斥（SSH 不走 HTTP 代理）"}, args.quiet, 3)
+    if prefer_ssh and proxy:
+        return finish({"action": "git", "ok": False,
+                       "detail": "--prefer-ssh 与 --proxy 互斥（两者都是出口优先级声明，二选一）"},
+                      args.quiet, 3)
+    if force and (proxy or transport or prefer_ssh):
+        return finish({"action": "git", "ok": False,
+                       "detail": "--force 指定单通道，与 --proxy / --transport / --prefer-ssh 不能同用"},
+                      args.quiet, 3)
     write = bool(set(git_args) & WRITE_TOKENS)
     scenario = "git_write" if write else "git_read"
     # shallow 乘数：clone 且未显式指定时默认 --depth 1（只读场景）
@@ -453,36 +496,18 @@ def cmd_git(args) -> int:
     if force == "mirror" and write:
         return finish({"action": "git", "ok": False,
                        "detail": "红线：写操作不允许强制走 mirror"}, args.quiet, 3)
-    tried = []
-    last_err = ""
-    base = [force] if force else chain_for(scenario)
-    chain = [c for c in base if c not in excl]
-    if not chain:
-        return finish({"action": "git", "ok": False,
-                       "detail": "场景链被 --exclude 全部排除（base=%s, exclude=%s）" % (base, sorted(excl))},
-                      args.quiet, 1)
-    # ---- ssh / proxy 通道（单开；显式决定优先，探活先于执行，失败不静默回退）----
-    if proxy:
-        okp, why = _CH["proxy"].validate(proxy)
-        if not okp:
-            return finish({"action": "git", "ok": False, "detail": why}, args.quiet, 3)
-    if transport and transport != "ssh":
-        return finish({"action": "git", "ok": False,
-                       "detail": "--transport 仅支持 ssh（收到：%s）" % transport}, args.quiet, 3)
-    if transport and proxy:
-        return finish({"action": "git", "ok": False,
-                       "detail": "--transport ssh 与 --proxy 互斥（SSH 不走 HTTP 代理）"}, args.quiet, 3)
+    # ---- ssh / proxy 执行路径（单开；显式决定优先，探活先于执行，失败不静默回退）----
+    sp_known = None
     ssh_active, ssh_note = False, ""
     if transport == "ssh" or prefer_ssh:
-        sp = _CH["ssh"].probe()
-        doors = "、".join("%s%s" % (e["name"], "✓" if e["ok"] else "✗") for e in sp["endpoints"])
-        if not sp.get("ok"):
+        sp_known = _CH["ssh"].probe()
+        doors = "、".join("%s%s" % (e["name"], "✓" if e["ok"] else "✗") for e in sp_known["endpoints"])
+        if not sp_known.get("ok"):
             if transport == "ssh":
                 return finish({"action": "git", "ok": False,
                                "detail": "SSH 门不可达（%s）" % doors,
                                "next": "gh.py ssh --status 看事实；或去掉 --transport 走默认链"},
                               args.quiet)
-            prefer_ssh = False              # 偏好随可行性生效：门未开 → 按默认链走
             ssh_note = "偏好 SSH 但门未开（%s）——已按默认链走" % doors
         else:
             ssh_active = True
@@ -506,8 +531,9 @@ def cmd_git(args) -> int:
                           args.quiet)
         offers = [{"id": "chain", "kind": "自动降级链",
                    "evidence": "代理出口失败（%s）" % str(r.get("detail", ""))[:80],
-                   "retry": _base_cmd(drop_value=("--transport",), drop_bool=("--prefer-ssh",))}]
-        so = _ssh_offer(git_args)
+                   "retry": _base_cmd(drop_value=("--proxy", "--transport"),
+                                      drop_bool=("--prefer-ssh",))}]
+        so = _ssh_offer(git_args, sp=sp_known)
         if so:
             offers.append(so)
         return finish({"action": "git", "ok": False, "detail": "用户代理出口失败",
@@ -530,7 +556,8 @@ def cmd_git(args) -> int:
                            **({"ssh_note": ssh_note} if ssh_note else {})}, args.quiet)
         offers = [{"id": "chain", "kind": "自动降级链（HTTPS）",
                    "evidence": "SSH 传输失败（%s）" % str(r.get("detail", ""))[:80],
-                   "retry": _base_cmd(drop_value=("--transport",), drop_bool=("--prefer-ssh",))}]
+                   "retry": _base_cmd(drop_value=("--proxy", "--transport"),
+                                      drop_bool=("--prefer-ssh",))}]
         po = _proxy_offer()
         if po:
             offers.append(po)
@@ -538,9 +565,18 @@ def cmd_git(args) -> int:
                        "err": (r.get("err") or "")[-1500:],
                        "elapsed": round(time.perf_counter() - t0, 2), "tried": tried,
                        "budget": bud.snapshot(), "offers": offers,
+                       **({"ssh_note": ssh_note} if ssh_note else {}),
                        "need_confirm": bool(offers)}, args.quiet)
+    tried = []
+    last_err = ""
     if ssh_note:
         tried.append({"channel": "ssh", "ok": False, "detail": ssh_note})
+    base = [force] if force else chain_for(scenario)
+    chain = [c for c in base if c not in excl]
+    if not chain:
+        return finish({"action": "git", "ok": False,
+                       "detail": "场景链被 --exclude 全部排除（base=%s, exclude=%s）" % (base, sorted(excl))},
+                      args.quiet, 1)
     for ch in chain:
         if not bud.can_attempt():
             tried.append({"channel": ch, "ok": False, "detail": "预算不足，停止降级"})
@@ -868,7 +904,7 @@ def main() -> int:
     p.add_argument("--deadline", type=float)
     p.add_argument("--force", help="只走指定通道（排障/验收用）")
     p.add_argument("--exclude", help="排除通道（逗号分隔，如 mirror,cdn；与 --force 互斥）")
-    p.add_argument("--proxy", help="用户自有出口（仅无认证地址 http/https/socks5；优先级最高、不走链）")
+    p.add_argument("--proxy", help="用户自有出口（仅无认证地址 http/https/socks5(h)；优先级最高、不走链）")
     p.set_defaults(func=cmd_get)
 
     p = sub.add_parser("git", help="包裹 git（环境守卫 + 预算 + 降级；写操作不经 mirror）", parents=[common])
@@ -877,7 +913,7 @@ def main() -> int:
     p.add_argument("--deadline", type=float, help="整体时间预算（秒）")
     p.add_argument("--force", help="只走指定通道（排障/验收用；写操作禁 mirror）")
     p.add_argument("--exclude", help="排除通道（逗号分隔；与 --force 互斥）")
-    p.add_argument("--proxy", help="用户自有出口（仅无认证地址 http/https/socks5；优先级最高、不走链）")
+    p.add_argument("--proxy", help="用户自有出口（仅无认证地址 http/https/socks5(h)；优先级最高、不走链）")
     p.add_argument("--transport", help="git 传输改写（仅 ssh：https→ssh 调用级改写，不碰 remote/key）")
     p.add_argument("--prefer-ssh", action="store_true",
                    help="声明偏好：SSH 门可达时优先走 SSH，门未开自动按链走")

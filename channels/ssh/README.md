@@ -11,7 +11,7 @@ TLS 握手会明文暴露"我在访问 github.com"——被针对性识别的软
 |---|---|---|
 | 端口 | 443 | **22**（官方备门 `ssh.github.com:443`） |
 | 协议 | TLS（有 SNI） | SSH（**无 SNI**——握手里没有域名可查） |
-| 覆盖操作 | 全部 | 仅 git 操作（clone/pull/push/fetch） |
+| 覆盖操作 | 全部 | 仅 git 联网操作（clone/fetch/pull/push/ls-remote/submodule update 等——raw/Release/网页不走 SSH） |
 
 价值：**独立端口 + 无 SNI**，是 HTTPS 被针对性阻断时的逃生族；对写操作尤其重要
 （`git_write` 链只有 `direct→pin` 两条 HTTPS 路，SSH 是红线之外唯一合法的第三条）。
