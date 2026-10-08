@@ -105,10 +105,11 @@ def main() -> int:
           {k: fm(k) for k in ("version", "display_name", "display_name_en")})
     # 上限 200：维护者 2026-10-03 定——人类向简介要覆盖足量症状关键词（打不开/屏蔽/代理…），
     # 短到 160 会逼得砍掉真实检索词。上限只防"失控变成长文"，不卡字数。
-    # 2026-10-05 调至 220：维护者新文案 218 字（新增"更加迅捷/保驾护航"收尾），200 卡住 18 字；
-    # 权衡后保留文案全文，仅放宽 20 字——仍拦截失控长文。
+    # 2026-10-05 调至 220：维护者新文案 218 字（新增"更加迅捷/保驾护航"收尾）。
+    # 2026-10-08 调至 300：用户定稿 297 字（源构成精确拆解 + DoH 提供方标注）——
+    # 市场简介需容纳源构成说明；仍短于 description 路由长文 329，且"zh ≠ description"约束不变。
     check("A6c 展示分工：description_zh/en 为人类向简介（≠description 路由长文，长度适中）",
-          fm("description_zh") != desc and 20 < len(fm("description_zh") or "") <= 220
+          fm("description_zh") != desc and 20 < len(fm("description_zh") or "") <= 300
           and fm("description_en") != desc and 20 < len(fm("description_en") or "") <= 300,
           {"zh": len(fm("description_zh") or ""), "en": len(fm("description_en") or "")})
     check("A7 SKILL.md 正文 < 500 行（渐进披露）", len(SKILL.splitlines()) < 500, len(SKILL.splitlines()))
