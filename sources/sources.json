@@ -855,6 +855,14 @@
           "note": "JSDMirror 系国内镜像（JSDMirror 分发域）；路径规则与 jsDelivr 完全一致"
         }
       ]
+    },
+    "ssh": {
+      "note": "SSH 传输官方端点（github.com:22 与官方备门 ssh.github.com:443）——仅 ssh 通道消费。单开源类：与 ip/mirror/cdn 互不借用（通道与源不混用为架构铁律）。探测为纯 TCP 连通性，零凭证、不碰用户 SSH key。",
+      "speedtest": { "method": "tcp", "note": "纯 TCP 连通性探测（零凭证）——不测延迟排序、不做性能结论" },
+      "endpoints": [
+        { "name": "github-22", "host": "github.com", "port": 22 },
+        { "name": "ssh-over-443", "host": "ssh.github.com", "port": 443 }
+      ]
     }
   }
 }

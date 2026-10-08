@@ -1,8 +1,8 @@
 {
   "name": "github-web-skill",
   "author": "木小匣",
-  "version": "2.2.3",
-  "updated": "2026-10-05",
+  "version": "2.3.0",
+  "updated": "2026-10-08",
   "update": {
     "url": "https://github.com/18875216268/github-web-skill",
     "mode": "on-demand（仅显式调用 gh.py update 时检测/下载；本技能从不自检更新）",

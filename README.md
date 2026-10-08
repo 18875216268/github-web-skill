@@ -1,7 +1,7 @@
 # 访问GitHub网络（github-web-skill）
 
 > **GitHub 连不上、git clone 失败、文件下载卡住时，用它。**
-> 95 个源 · 6 条通道 · 6 个场景路由 · 零第三方依赖（Python 标准库 + 系统 git/curl）
+> 95 个源 + 2 个官方 SSH 端点 · 8 条通道 · 6 个场景路由 · 零第三方依赖（Python 标准库 + 系统 git/curl）
 
 网络受限时让 GitHub 恢复可用：克隆 / 拉取 / 推送仓库、下载单文件与 Release 资产、修好打不开 github.com 的浏览器。
 **它不是"收藏了几个加速网址"，而是加速方式的选择与切换机制本身**——按你要做的事自动选定候选通道，每条通道内部并发探活择优，这条真不通才换下一条。
@@ -17,7 +17,7 @@ python scripts/gh.py diag      # 唯一入口，先只读诊断：看你的网�
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | 访问GitHub网络（github-web-skill） |
-| 版本 | 2.2.3 |
+| 版本 | 2.3.0 |
 | 日期 | 2026-10-03 |
 | 作者 | 木小匣 |
 | 许可 | MIT |
@@ -78,7 +78,7 @@ github-web-skill/
 ├── LICENSE             # MIT 许可证
 ├── routes/             # 路由层：routes.json（唯一事实源）+ ROUTES.md（渲染产物）
 ├── sources/            # 资源层：sources.json（唯一数据文件）+ hub/collect/speedtest + ip/
-├── channels/           # 通道层：6 条通道，一通道一文件夹（实现 + 该通道 README）
+├── channels/           # 通道层：8 条通道，一通道一文件夹（实现 + 该通道 README）
 ├── scripts/            # 治理层：gh.py（唯一 CLI）+ budget/env_guard/probe/report/lines
 ├── update/             # 更新层：仅在你明确要求时才检测和安装更新
 └── tests/              # 自检测试：python tests/run_tests.py

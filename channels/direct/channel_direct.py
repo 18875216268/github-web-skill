@@ -86,15 +86,24 @@ def content_sane(dest: Path, path: str) -> tuple:
     return True, ""
 
 
-def git_run(args: list, cwd: str | None, timeout: float, budget=None) -> dict:
+def git_run(args: list, cwd: str | None, timeout: float, budget=None,
+            proxy: str | None = None) -> dict:
+    """执行 git（direct 通道原语）。
+
+    proxy：用户自有出口（proxy 通道，显式 --proxy 传入）——非空时为子进程显式设置
+    HTTP(S)_PROXY（env_guard 清空的是环境注入代理，与用户显式指定不冲突）。
+    """
     t0 = time.perf_counter()
     if not env_guard.have_git():
         return {"ok": False, "detail": "未安装 git", "elapsed": 0.0, "rc": -1, "out": "", "err": ""}
     cmd = ["git", *env_guard.git_config_prefix(), *args]
+    env = env_guard.clean_env()
+    if proxy:
+        env["HTTP_PROXY"] = env["HTTPS_PROXY"] = proxy
     try:
         # 不设 text=True：交给 decode_output 智能判码页（Windows 本地化报错是 GBK，非 UTF-8）
         p = subprocess.run(cmd, cwd=cwd, capture_output=True,
-                           env=env_guard.clean_env(), timeout=timeout)
+                           env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "detail": "git 超时", "elapsed": round(time.perf_counter() - t0, 2),
                 "rc": 124, "out": "", "err": "timed out"}

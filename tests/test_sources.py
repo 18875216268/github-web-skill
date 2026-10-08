@@ -164,7 +164,7 @@ def main() -> int:
            "cdn": n_cdn, "domains": n_dom})
     methods = {k: ((node or {}).get("speedtest") or {}).get("method") for k, node in kinds.items()}
     check("S8b 测速策略数据声明齐备且 method 合法",
-          all(m in ("tcp", "head") for m in methods.values()) and len(methods) == 3, methods)
+          all(m in ("tcp", "head") for m in methods.values()) and len(methods) == 4, methods)
 
     # ---------- S6 白名单对账（真 manifest） ----------
     chk = hub._check()

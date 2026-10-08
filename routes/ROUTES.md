@@ -13,6 +13,8 @@
 | `hosts` | 否 | 是 | `ip` | 兜底修系统解析（含浏览器）：标记块写入 hosts，需显式授权且必须可回滚。 | `channels/hosts/channel_hosts.py`（README 含内部降级链） |
 | `mirror` | mirror-pool | 否 | `mirror` | 只读兜底：直连与钉 IP 都失败时经第三方转发代理读取（写操作永不经过；并发探活择优、源池只增不删）。 | `channels/mirror/channel_mirror.py`（README 含内部降级链） |
 | `offline` | 否 | 否 | — | 不联网的约定态（无实现文件）：链尾如实报告失败原因并给出下一步建议，不含任何离线预置数据。 | 约定态（无实现文件） |
+| `ssh` | 否 | 否 | `ssh` | SSH 传输健康：官方双端点连通性探测（github.com:22 / ssh.github.com:443），零凭证、不碰用户 SSH key。不进自动降级链（SSH 只承载 git 操作）——作为诊断事实与 offers 数据源。 | `channels/ssh/channel_ssh.py`（README 含内部降级链） |
+| `proxy` | 否 | 否 | — | 用户自有出口：显式 --proxy 传入（仅无认证地址，带凭证直接拒绝），优先级最高、不走链、失败不静默回退；不传则本通道不存在。 | `channels/proxy/channel_proxy.py`（README 含内部降级链） |
 
 ## 场景路由（情况 × 通道矩阵）
 

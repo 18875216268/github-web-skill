@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""ssh / proxy 双通道（2026-10-08 新增）的结构与行为锁。
+
+单开铁律：一通道一文件夹一注册一源类，互不借用——
+- ssh 通道只消费 kinds.ssh（2 官方端点）；ip 源类（42 域）保持纯净（无 ssh 域混入）；
+- proxy 通道无源类（地址来自 --proxy 运行时参数），且只收无认证地址（凭证不经过本技能）；
+- 两通道都不进自动降级链（六条场景链不变）。
+"""
+import json
+import os
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+PKG = HERE.parent
+SCRIPTS = PKG / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(PKG / "channels" / "proxy"))   # channel_proxy.validate 供进程内单测
+
+
+def gh(*args, timeout=90):
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    p = subprocess.run([sys.executable, str(SCRIPTS / "gh.py"), *args],
+                       capture_output=True, text=True, encoding="utf-8",
+                       errors="replace", timeout=timeout, env=env, cwd=str(PKG))
+    return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
+
+
+class TestSingleOpenStructure(unittest.TestCase):
+    """单开铁律的结构面：注册、源类、文件夹三者一一对应。"""
+
+    def setUp(self):
+        self.routes = json.loads((PKG / "routes" / "routes.json").read_text(encoding="utf-8"))
+        self.src = json.loads((PKG / "sources" / "sources.json").read_text(encoding="utf-8"))
+
+    def test_ssh_channel_registered_with_dedicated_kind(self):
+        c = self.routes["channels"].get("ssh")
+        self.assertIsNotNone(c, "routes.json 缺少 ssh 通道注册")
+        self.assertEqual(c.get("kinds"), ["ssh"])
+        self.assertTrue((PKG / "channels" / "ssh" / "channel_ssh.py").is_file())
+        self.assertTrue((PKG / "channels" / "ssh" / "README.md").is_file())
+
+    def test_ssh_kind_exists_with_two_official_endpoints(self):
+        k = self.src["kinds"].get("ssh")
+        self.assertIsNotNone(k, "sources.json 缺少 kinds.ssh（单开源类）")
+        eps = k["endpoints"]
+        self.assertEqual(len(eps), 2)
+        self.assertEqual({e["name"] for e in eps},
+                         {"github-22", "ssh-over-443"})
+        self.assertEqual({e["port"] for e in eps}, {22, 443})
+
+    def test_ip_domains_stay_pure_no_ssh_mixing(self):
+        """铁律锁：ssh.github.com 不得混入 ip 源类（那是 pin/hosts 的专属源层）。"""
+        doms = self.src["kinds"]["ip"]["domains"]
+        self.assertEqual(len(doms), 42, "ip 域表数量被改动")
+        self.assertNotIn("ssh.github.com", doms)
+
+    def test_proxy_channel_registered_without_sources(self):
+        c = self.routes["channels"].get("proxy")
+        self.assertIsNotNone(c, "routes.json 缺少 proxy 通道注册")
+        self.assertEqual(c.get("kinds"), [], "proxy 无源类（地址来自 --proxy 运行时参数）")
+        self.assertTrue((PKG / "channels" / "proxy" / "channel_proxy.py").is_file())
+        self.assertTrue((PKG / "channels" / "proxy" / "README.md").is_file())
+
+    def test_scenarios_unchanged(self):
+        """六条自动降级链不动：ssh/proxy 不进链（单开 ≠ 必须进链）。"""
+        chains = {s["id"]: s["chain"] for s in self.routes["scenarios"]}
+        self.assertEqual(chains["git_write"], ["direct", "pin"])
+        self.assertEqual(chains["git_read"], ["direct", "pin", "mirror"])
+        for cid in ("ssh", "proxy"):
+            for chain in chains.values():
+                self.assertNotIn(cid, chain,
+                                 "%s 不应出现在自动降级链中" % cid)
+
+
+class TestSshStatusCli(unittest.TestCase):
+    """gh.py ssh --status：零凭证探测，只验 JSON 结构（不验网络结果）。"""
+
+    def test_status_shape(self):
+        rc, out, err = gh("ssh", "--status")
+        self.assertEqual(rc, 0, err[:120])
+        d = json.loads(out)
+        self.assertEqual(d.get("action"), "ssh.status")
+        self.assertEqual(d.get("channel"), "ssh")
+        self.assertIsInstance(d.get("ok"), bool)
+        eps = d.get("endpoints") or []
+        self.assertEqual(len(eps), 2)
+        for e in eps:
+            self.assertIn("ok", e)
+            self.assertIn("ms", e)
+
+    def test_ssh_without_args_is_usage_error(self):
+        rc, _out, _err = gh("ssh")
+        self.assertEqual(rc, 3)
+
+
+class TestProxyChannel(unittest.TestCase):
+    """proxy：只收无认证地址；显式传入即已决定；失败给 offers 而非静默回退。"""
+
+    def test_validate_rejects_credentials(self):
+        import channel_proxy  # noqa: E402  —— channels/ 目录已注入 sys.path
+        ok, why = channel_proxy.validate("http://user:pass@127.0.0.1:7890")
+        self.assertFalse(ok)
+        self.assertIn("凭证", why)
+        ok, _ = channel_proxy.validate("http://127.0.0.1:7890")
+        self.assertTrue(ok)
+
+    def test_cli_rejects_credential_proxy(self):
+        rc, out, _err = gh("get", "--url", "https://github.com/git/git/raw/master/README.md",
+                           "--proxy", "http://user:pass@127.0.0.1:7890")
+        self.assertEqual(rc, 3)
+        self.assertIn("凭证", out)
+
+    def test_dead_proxy_fails_with_chain_offer(self):
+        """离线确定性：不可达端口 → 快速失败 + offers 含『改走自动链』。"""
+        rc, out, _err = gh("get", "--url", "https://github.com/git/git/raw/master/README.md",
+                           "--proxy", "http://127.0.0.1:9")
+        self.assertEqual(rc, 2, out[:160])
+        d = json.loads(out)
+        self.assertFalse(d.get("ok"))
+        offers = d.get("offers") or []
+        self.assertTrue(any(o.get("id") == "chain" for o in offers),
+                        "代理失败后应提供『改走自动链』选项")
+        self.assertTrue(d.get("need_confirm"))
+
+    def test_mutual_exclusion_transport_and_proxy(self):
+        rc, out, _err = gh("git", "push", "--transport", "ssh",
+                           "--proxy", "http://127.0.0.1:7890")
+        self.assertEqual(rc, 3)
+        self.assertIn("互斥", out)
+
+    def test_bogus_transport_is_usage_error(self):
+        rc, out, _err = gh("git", "push", "--transport", "carrier-pigeon")
+        self.assertEqual(rc, 3)
+        self.assertIn("仅支持 ssh", out)
+
+
+class TestTransportSshRewrite(unittest.TestCase):
+    """--transport ssh 的调用级改写：单点注入 insteadOf，不碰 remote/key。"""
+
+    def test_rewrite_marker_in_source(self):
+        src = (PKG / "scripts" / "gh.py").read_text(encoding="utf-8")
+        self.assertIn("url.git@github.com:.insteadOf=https://github.com/", src,
+                      "调用级 SSH 改写（insteadOf）缺失")
+
+    def test_prefer_ssh_flag_exists(self):
+        src = (PKG / "scripts" / "gh.py").read_text(encoding="utf-8")
+        self.assertIn('"--prefer-ssh"', src)
+        self.assertIn("--prefer-ssh", (PKG / "SKILL.md").read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()

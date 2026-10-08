@@ -277,7 +277,7 @@ def main() -> int:
           _doc_version(SKILL) == _doc_version(README) == man_ver and bool(man_ver),
           {"skill": _doc_version(SKILL), "readme": _doc_version(README), "manifest": man_ver})
 
-    for label, pat in (("源总数 95", r"95 个源"), ("通道数 6", r"6 条通道"),
+    for label, pat in (("源总数 95", r"95 个源"), ("通道数 8", r"8 条通道"),
                        ("mirror 68", r"\|\s*\*\*68\*\*\s*\|"),
                        ("cdn 13", r"\|\s*\*\*13\*\*\s*\|"),
                        ("ip 启用 6", r"启用 6")):

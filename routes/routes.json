@@ -43,6 +43,20 @@
       "needs_confirm": false,
       "kinds": [],
       "role": "不联网的约定态（无实现文件）：链尾如实报告失败原因并给出下一步建议，不含任何离线预置数据。"
+    },
+    "ssh": {
+      "file": "channels/ssh/channel_ssh.py",
+      "third_party": false,
+      "needs_confirm": false,
+      "kinds": ["ssh"],
+      "role": "SSH 传输健康：官方双端点连通性探测（github.com:22 / ssh.github.com:443），零凭证、不碰用户 SSH key。不进自动降级链（SSH 只承载 git 操作）——作为诊断事实与 offers 数据源。"
+    },
+    "proxy": {
+      "file": "channels/proxy/channel_proxy.py",
+      "third_party": false,
+      "needs_confirm": false,
+      "kinds": [],
+      "role": "用户自有出口：显式 --proxy 传入（仅无认证地址，带凭证直接拒绝），优先级最高、不走链、失败不静默回退；不传则本通道不存在。"
     }
   },
   "scenarios": [
