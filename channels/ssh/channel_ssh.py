@@ -20,7 +20,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[2]      # channels/ssh/ → 包根（两级）
 SRC_F = PKG / "sources" / "sources.json"
-TIMEOUT = 6.0          # 单端点 TCP 连接超时（秒）——与治理层单条探测超时同级
+TIMEOUT = 10.0         # 单端点探测**总预算**（秒）——双栈/污染多地址不再 6s×N 累加
 
 
 def endpoints() -> list:
@@ -35,10 +35,51 @@ def endpoints() -> list:
         return []
 
 
+def _connect_capped(host: str, port: int, timeout: float) -> dict:
+    """带总预算封顶的 TCP 连接：逐地址预算 = 剩余总预算（双栈/污染多地址不累加）。
+
+    返回 {"ok": bool, "ms": 总耗时, "errs": [逐地址失败记录（IP:类型/预算耗尽）]}。
+    github.com/ssh.github.com 正常只发布 A 记录（单地址）——封顶针对的是
+    DNS 污染返回多个假地址的目标环境（正是本技能的主战场）。
+    """
+    t0 = time.monotonic()
+    deadline = t0 + timeout
+    errs, n_tried = [], 0
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        return {"ok": False, "ms": round((time.monotonic() - t0) * 1000),
+                "errs": ["getaddrinfo:%s" % type(exc).__name__]}
+    for af, st, proto, _cn, sa in infos:
+        remain = deadline - time.monotonic()
+        if remain <= 0:
+            errs.append("预算耗尽@%s" % (sa[0],))
+            continue
+        s = None
+        try:
+            s = socket.socket(af, st, proto)
+            s.settimeout(remain)
+            s.connect(sa)
+            ms = round((time.monotonic() - t0) * 1000)
+            return {"ok": True, "ms": ms, "errs": errs, "addr": sa[0], "tried": n_tried}
+        except OSError as exc:
+            n_tried += 1
+            errs.append("%s:%s" % (sa[0], type(exc).__name__))
+        finally:
+            if s is not None:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+    return {"ok": False, "ms": round((time.monotonic() - t0) * 1000), "errs": errs,
+            "tried": n_tried}
+
+
 def probe(timeout: float = TIMEOUT) -> dict:
     """对全部官方端点做纯 TCP 连通性探测（零凭证、事实记录、不做性能结论）。
 
-    返回 {"ok": 任一端点可达, "endpoints": [{name, host, port, ok, ms[, err]}]}。
+    每个端点探测总耗时 ≤ timeout（多地址预算封顶，不随地址数累加）。
+    返回 {"ok": 任一端点可达, "endpoints": [{name, host, port, ok, ms[, errs]}]}。
     """
     eps = endpoints()
     if not eps:
@@ -46,18 +87,11 @@ def probe(timeout: float = TIMEOUT) -> dict:
                 "err": "SSH 端点源读取失败（kinds.ssh 缺失或损坏）"}
     out = []
     for ep in eps:
-        t0 = time.perf_counter()
-        ok, err = False, ""
-        try:
-            with socket.create_connection((ep["host"], int(ep["port"])), timeout=timeout):
-                ok = True
-        except Exception as exc:                 # socket/数值/解析类失败统一记事实，不抛
-            err = type(exc).__name__
+        r = _connect_capped(ep.get("host", "?"), int(ep.get("port", 0)), timeout)
         rec = {"name": ep.get("name", "?"), "host": ep.get("host", "?"),
-               "port": ep.get("port", "?"),
-               "ok": ok, "ms": round((time.perf_counter() - t0) * 1000)}
-        if err:
-            rec["err"] = err
+               "port": ep.get("port", "?"), "ok": r["ok"], "ms": r["ms"]}
+        if r.get("errs"):
+            rec["errs"] = r["errs"][:6]          # 事实记录，截断防爆量
         out.append(rec)
     return {"ok": any(o["ok"] for o in out), "endpoints": out}
 

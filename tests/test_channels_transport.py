@@ -9,9 +9,12 @@
 """
 import json
 import os
+import socket
 import subprocess
 import sys
+import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -21,6 +24,7 @@ _UHOME = os.path.join(os.environ["TEMP"], "gws_t_uhome")   # 测试用户区（�
 os.makedirs(_UHOME, exist_ok=True)
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(PKG / "channels" / "proxy"))   # channel_proxy.validate 供进程内单测
+sys.path.insert(0, str(PKG / "channels" / "ssh"))     # channel_ssh.probe 供进程内单测
 
 
 def gh(*args, timeout=90):
@@ -139,22 +143,51 @@ class TestOffersShape(unittest.TestCase):
         self.assertEqual(rc, 2 if offers else 1)
 
 
+class TestSshBudgetCap(unittest.TestCase):
+    """probe 总预算封顶：多地址（双栈/污染假地址）不累加超时。"""
+
+    def test_multi_address_capped(self):
+        import channel_ssh
+        fake = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.255.255.1", 22)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.255.255.2", 22))]
+        with unittest.mock.patch.object(channel_ssh.socket, "getaddrinfo",
+                                        return_value=fake):
+            t0 = time.monotonic()
+            r = channel_ssh.probe(timeout=1.0)
+            elapsed_ms = (time.monotonic() - t0) * 1000
+        self.assertFalse(r.get("ok"))
+        eps = r["endpoints"]
+        self.assertEqual(len(eps), 2)                     # 两端点都按预算走完
+        self.assertLess(elapsed_ms, 3000, "总预算封顶失效（>3s）")
+        for e in eps:
+            self.assertFalse(e["ok"])
+            self.assertIn("errs", e)                      # 逐地址失败记录（带 IP:类型）
+
+
 class TestProxyChannel(unittest.TestCase):
     """proxy：只收无认证地址；显式传入即已决定；失败给 offers 而非静默回退。"""
 
-    def test_validate_rejects_credentials(self):
-        import channel_proxy  # noqa: E402  —— channels/ 目录已注入 sys.path
-        ok, why = channel_proxy.validate("http://user:pass@127.0.0.1:7890")
-        self.assertFalse(ok)
-        self.assertIn("凭证", why)
-        ok, _ = channel_proxy.validate("http://127.0.0.1:7890")
-        self.assertTrue(ok)
+    def test_validate_credential_matrix(self):
+        """宽松凭证判定（2026-10-08 用户裁决）：仅拒 user:pass@；裸用户名/path@ 放行。"""
+        import channel_proxy  # noqa: E402
+        v = channel_proxy.validate
+        self.assertFalse(v("http://user:pass@127.0.0.1:7890")[0])       # 密码 → 拒
+        self.assertIn("密码", v("http://user:pass@127.0.0.1:7890")[1])
+        self.assertFalse(v("socks5://u:p@proxy:1080")[0])               # socks 凭证 → 拒
+        self.assertFalse(v("http://127.0.0.1:9@x")[0])                  # 歧义 netloc → 宁拒
+        self.assertTrue(v("http://127.0.0.1:7890")[0])                  # 无认证 → 放行
+        self.assertTrue(v("socks5h://127.0.0.1:1080")[0])
+        self.assertTrue(v("http://127.0.0.1:9/p@th")[0])                # @ 在 path → 放行
+        self.assertTrue(v("http://127.0.0.1:9/?a=@b")[0])               # @ 在 query → 放行
+        self.assertFalse(v("ftp://127.0.0.1:21")[0])                    # 协议白名单
+        self.assertFalse(v("")[0])
+        self.assertFalse(v("http://127.0.0.1:7890 x")[0])               # 空白 → 拒
 
     def test_cli_rejects_credential_proxy(self):
         rc, out, _err = gh("get", "--url", "https://github.com/git/git/raw/master/README.md",
                            "--proxy", "http://user:pass@127.0.0.1:7890")
         self.assertEqual(rc, 3)
-        self.assertIn("凭证", out)
+        self.assertIn("密码", out)
 
     def test_dead_proxy_fails_with_chain_offer(self):
         """离线确定性：不可达端口 → 快速失败 + offers 含『改走自动链』。"""

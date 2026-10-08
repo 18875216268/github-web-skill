@@ -1,6 +1,6 @@
 ---
 name: github-web-skill
-version: "2.3.1"
+version: "2.3.2"
 display_name: "访问GitHub网络"
 display_name_en: "GitHub Access Layer"
 description: "帮助用户轻松访问 GitHub 网络，突破GitHub网络限制（GitHub限速、无法访问等），特别是当遇上 git clone / pull / push 失败或超时、raw 文件与 Release 资产下载不动、github.com 打不开、浏览器进不去、DNS 污染导致解析到错误 IP、公司网络与校园网屏蔽 GitHub、代理环境变量让命令莫名失败、网速慢拉不动仓库等情况时，本技能可快速提供 GitHub 一键加速、github 镜像站自动切换、修改 hosts 修复浏览器访问、受限网络下 clone 仓库与下载文件等能力！实现多源、多通道智能路由，按你的网络情况个性化制定访问方案，全流程自动择优、失败自动换路，结果如实报告、改系统随时可回滚。"
@@ -325,7 +325,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | `--ref <分支/标签>` | 取文件（`get`）或更新（`update`）时的引用，默认 `main`；正式判定建议用 tag/commit 固定 |
 | `--url <https 链接>` | `get` 取任意官方/第三方 https 链接（Release 资产、codeload 等）；此时不走 CDN |
 | `--dest <文件>` | 输出落盘路径（不指定则落到用户区 cache 目录） |
-| `--proxy <URL>` | `get` / `git` 用户自有出口（仅无认证 http/https/socks5(h)；**优先级最高、不走链**，失败不静默回退而是重新给选项）。环境检测到代理时**绝不自动使用**——只经探活后作为选项呈现 |
+| `--proxy <URL>` | `get` / `git` 用户自有出口（http/https/socks5(h)；**仅拒带密码的代理** user:pass@——裸用户名与 path 含 @ 放行；**优先级最高、不走链**，失败不静默回退而是重新给选项）。环境检测到代理时**绝不自动使用**——只经探活后作为选项呈现 |
 | `--transport ssh` | `git` 调用级改写 https→ssh（**仅本次调用**，不碰 remote/key）。与 `--proxy` 互斥；门不可达时如实失败 |
 | `--prefer-ssh` | `git` 声明偏好：SSH 门可达即优先走 SSH，门未开自动按链走并注明；与 `--transport` 二选一 |
 | `--cwd <目录>` | `git` 子命令的工作目录 |
