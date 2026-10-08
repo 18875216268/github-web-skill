@@ -17,7 +17,7 @@ python scripts/gh.py diag      # 唯一入口，先只读诊断：看你的网�
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | 访问GitHub网络（github-web-skill） |
-| 版本 | 2.3.3 |
+| 版本 | 2.3.4 |
 | 日期 | 2026-10-03 |
 | 作者 | 木小匣 |
 | 许可 | MIT |
@@ -249,7 +249,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | --- | --- |
 | `--force <通道>` | 只走指定通道（只接受**有实现**的 `direct`/`pin`/`mirror`/`cdn`；写操作禁 `mirror`，会被红线拒绝） |
 | `--exclude <通道,...>` | 裁剪当前场景链（与 `--force` 互斥；排除后链空则如实失败） |
-| `--deadline <秒>` | 整体时间预算（默认 get 60s / git 180s / update 60s；预算不足即停止并留痕） |
+| `--deadline <秒>` | 整体时间预算（默认 get 90s / git 180s / update 60s；预算不足即停止并留痕） |
 | `--ref <分支/标签>` | 取文件（`get`）或更新（`update`）时的引用，默认 `main`；正式判定建议用 tag/commit 固定 |
 | `--url <https 链接>` | `get` 取任意官方/第三方 https 链接（Release 资产、codeload 等）；此时不走 CDN |
 | `--dest <文件>` | 输出落盘路径（不指定则落到用户区 cache 目录） |
@@ -291,7 +291,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 
 | 预算 | 作用域 | 默认 | 谁执行 |
 | --- | --- | --- | --- |
-| **调用预算** | 整条降级链（direct → pin → mirror）的墙钟上限 | get 60s / git 180s（`--deadline` 可改） | `scripts/budget.py` 的 `Budget`，逐层下发 `timeout_for()` |
+| **调用预算** | 整条降级链（direct → pin → mirror）的墙钟上限 | get 90s / git 180s（`--deadline` 可改） | `scripts/budget.py` 的 `Budget`，逐层下发 `timeout_for()` |
 | **拉源成本** | 资源层"拉一次源 + 测速"的固有成本，**与降级预算正交** | 25s（`sources/hub.py`） | `probe.race` 的守护线程 + deadline |
 
 已知偏差：`pin` 阶段会先拉一次源，这 ~25s**不受调用预算管辖**，所以最坏情况总耗时 ≈ 调用预算 + 25s。全包并发统一用 `probe.race`（**守护线程**）：deadline 到点立即返回、**不阻塞进程退出**。

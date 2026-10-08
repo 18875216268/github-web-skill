@@ -1,6 +1,6 @@
 ---
 name: github-web-skill
-version: "2.3.3"
+version: "2.3.4"
 display_name: "访问GitHub网络"
 display_name_en: "GitHub Access Layer"
 description: "帮助用户轻松访问 GitHub 网络，突破GitHub网络限制（GitHub限速、无法访问等），特别是当遇上 git clone / pull / push 失败或超时、raw 文件与 Release 资产下载不动、github.com 打不开、浏览器进不去、DNS 污染导致解析到错误 IP、公司网络与校园网屏蔽 GitHub、代理环境变量让命令莫名失败、网速慢拉不动仓库等情况时，本技能可快速提供 GitHub 一键加速、github 镜像站自动切换、修改 hosts 修复浏览器访问、受限网络下 clone 仓库与下载文件等能力！实现多源、多通道智能路由，按你的网络情况个性化制定访问方案，全流程自动择优、失败自动换路，结果如实报告、改系统随时可回滚。"
@@ -296,7 +296,7 @@ githubfast.com · hub.yzuu.cf · github.hscsec.cn · hub.nuaa.cf · hub.gitfast.
 | git 走我自己的代理 | `get` / `git` 加 `--proxy http://127.0.0.1:7890`（仅无认证地址；优先级最高、不走链） |
 | git 改走 SSH 传输（本次调用） | `git` 加 `--transport ssh`（需你已配置 key；调用级改写，不碰 remote） |
 | 声明偏好：以后 git 优先走 SSH | `git` 加 `--prefer-ssh`（门可达即优先；门未开自动按链走并注明） |
-| 限制总耗时 | 任何取用命令加 `--deadline <秒>`（默认 get 60s / git 180s） |
+| 限制总耗时 | 任何取用命令加 `--deadline <秒>`（默认 get 90s / git 180s） |
 | 人打不开 GitHub（浏览器） | `hosts --status` → 报告后 `hosts --apply --yes`；随时 `hosts --rollback` |
 | 更新本 Skill（仅你显式要求时） | `update --check`（只读检测）→ `update --apply --yes`（自动备份）；随时 `update --rollback` |
 | 自检本 Skill | `python tests/run_tests.py`（`--offline` 跳过出网冒烟） |
@@ -321,7 +321,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | --- | --- |
 | `--force <通道>` | 只走指定通道（只接受**有实现**的 `direct`/`pin`/`mirror`/`cdn`；写操作禁 `mirror`，会被红线拒绝） |
 | `--exclude <通道,...>` | 裁剪当前场景链（与 `--force` 互斥；排除后链空则如实失败） |
-| `--deadline <秒>` | 整体时间预算（默认 get 60s / git 180s / update 60s；预算不足即停止并留痕）。**仅 get / git / update 接受此参数**——diag / hosts / routes 不需要预算，不认它 |
+| `--deadline <秒>` | 整体时间预算（默认 get 90s / git 180s / update 60s；预算不足即停止并留痕）。**仅 get / git / update 接受此参数**——diag / hosts / routes 不需要预算，不认它 |
 | `--ref <分支/标签>` | 取文件（`get`）或更新（`update`）时的引用，默认 `main`；正式判定建议用 tag/commit 固定 |
 | `--url <https 链接>` | `get` 取任意官方/第三方 https 链接（Release 资产、codeload 等）；此时不走 CDN |
 | `--dest <文件>` | 输出落盘路径（不指定则落到用户区 cache 目录） |
@@ -392,7 +392,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 
 | 预算 | 作用域 | 默认 | 谁执行 |
 | --- | --- | --- | --- |
-| **调用预算** | 整条降级链（direct → pin → mirror）的墙钟上限 | get 60s / git 180s（`--deadline` 可改） | `scripts/budget.py` 的 `Budget`，逐层下发 `timeout_for()` |
+| **调用预算** | 整条降级链（direct → pin → mirror）的墙钟上限 | get 90s / git 180s（`--deadline` 可改） | `scripts/budget.py` 的 `Budget`，逐层下发 `timeout_for()` |
 | **拉源成本** | 资源层"拉一次源 + 测速"的固有成本，**与降级预算正交** | 25s（`sources/hub.py`） | `probe.race` 的守护线程 + deadline |
 
 已知偏差：`pin` 阶段会先拉一次源，这 ~25s**不受调用预算管辖**，
