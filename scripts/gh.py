@@ -180,12 +180,14 @@ def _ssh_offer(git_args: list, sp: dict | None = None) -> dict | None:
     """SSH 门探测 → 通才成为选项（仅 git 对象操作；raw/release 不走 SSH）。
 
     sp：调用方已探测过的结果（如 --prefer-ssh 路径）——传入则复用，避免二次探测阻塞。
+    探活预算用 OFFER_TIMEOUT（10s 快筛）：门若 10s 都连不上，SSH 重试也不可用；
+    极端慢门场景请用 gh.py ssh --status（180s/端点长预算）。
     """
     if not (git_args and git_args[0] in
             {"clone", "fetch", "pull", "push", "ls-remote", "submodule"}):
         return None
     if sp is None:
-        sp = _CH["ssh"].probe()
+        sp = _CH["ssh"].probe(timeout=10.0)
     if not sp.get("ok"):
         return None
     doors = "、".join("%s%s" % (e["name"], "✓" if e["ok"] else "✗")
@@ -500,7 +502,9 @@ def cmd_git(args) -> int:
     sp_known = None
     ssh_active, ssh_note = False, ""
     if transport == "ssh" or prefer_ssh:
-        sp_known = _CH["ssh"].probe()
+        # 门探测用 10s 快筛：10s 都连不上，SSH git 操作也不可用；
+        # 极端慢门场景用 gh.py ssh --status（180s/端点长预算）复核
+        sp_known = _CH["ssh"].probe(timeout=10.0)
         doors = "、".join("%s%s" % (e["name"], "✓" if e["ok"] else "✗") for e in sp_known["endpoints"])
         if not sp_known.get("ok"):
             if transport == "ssh":

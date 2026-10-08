@@ -146,6 +146,12 @@ class TestOffersShape(unittest.TestCase):
 class TestSshBudgetCap(unittest.TestCase):
     """probe 总预算封顶：多地址（双栈/污染假地址）不累加超时。"""
 
+    def test_budget_values_lock_user_decision(self):
+        """2026-10-08 用户裁决：诊断预算 180s/端点（极端场景），offers 快筛 10s。"""
+        import channel_ssh
+        self.assertEqual(channel_ssh.TIMEOUT, 180.0)
+        self.assertEqual(channel_ssh.OFFER_TIMEOUT, 10.0)
+
     def test_multi_address_capped(self):
         import channel_ssh
         fake = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.255.255.1", 22)),

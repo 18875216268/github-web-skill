@@ -17,7 +17,7 @@ python scripts/gh.py diag      # 唯一入口，先只读诊断：看你的网�
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | 访问GitHub网络（github-web-skill） |
-| 版本 | 2.3.2 |
+| 版本 | 2.3.3 |
 | 日期 | 2026-10-03 |
 | 作者 | 木小匣 |
 | 许可 | MIT |
@@ -220,7 +220,7 @@ github-web-skill/
 | 取仓库里某个文件 | `python scripts/gh.py get owner/repo:path/to/file.txt [--ref main]` |
 | 取 Release 资产 / 任意官方下载 | `python scripts/gh.py get --url https://github.com/…/releases/download/…` |
 | 先看环境能走哪条通道 | `python scripts/gh.py diag`（`--full` 并发探活：镜像探 HTTP 能力、IP 每域前 2 个、SSH 双门连通） |
-| SSH 门开没开（零凭证） | `python scripts/gh.py ssh --status`（探测 github.com:22 与 ssh.github.com:443） |
+| SSH 门开没开（零凭证，含极端慢门场景） | `python scripts/gh.py ssh --status`（探测 github.com:22 与 ssh.github.com:443；每端点探测总预算 180s） |
 | git 走我自己的代理 | `get` / `git` 加 `--proxy http://127.0.0.1:7890`（仅无认证地址；优先级最高、不走链） |
 | git 改走 SSH 传输（本次调用） | `git` 加 `--transport ssh`（需你已配置 key；调用级改写，不碰 remote） |
 | 声明偏好：以后 git 优先走 SSH | `git` 加 `--prefer-ssh`（门可达即优先；门未开自动按链走并注明） |

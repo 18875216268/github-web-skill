@@ -20,7 +20,11 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[2]      # channels/ssh/ → 包根（两级）
 SRC_F = PKG / "sources" / "sources.json"
-TIMEOUT = 10.0         # 单端点探测**总预算**（秒）——双栈/污染多地址不再 6s×N 累加
+# 单端点探测总预算（秒）：2026-10-08 用户裁决 6→10→180——极端场景（跨网段慢握手、
+# 污染环境多假地址逐个试探）需要长预算。显式诊断（ssh --status / diag --full）用本值；
+# 失败报告的 offers 探活用 10s 快筛（OFFER_TIMEOUT），避免失败命令先卡 6 分钟。
+TIMEOUT = 180.0
+OFFER_TIMEOUT = 10.0
 
 
 def endpoints() -> list:

@@ -1,6 +1,6 @@
 ---
 name: github-web-skill
-version: "2.3.2"
+version: "2.3.3"
 display_name: "访问GitHub网络"
 display_name_en: "GitHub Access Layer"
 description: "帮助用户轻松访问 GitHub 网络，突破GitHub网络限制（GitHub限速、无法访问等），特别是当遇上 git clone / pull / push 失败或超时、raw 文件与 Release 资产下载不动、github.com 打不开、浏览器进不去、DNS 污染导致解析到错误 IP、公司网络与校园网屏蔽 GitHub、代理环境变量让命令莫名失败、网速慢拉不动仓库等情况时，本技能可快速提供 GitHub 一键加速、github 镜像站自动切换、修改 hosts 修复浏览器访问、受限网络下 clone 仓库与下载文件等能力！实现多源、多通道智能路由，按你的网络情况个性化制定访问方案，全流程自动择优、失败自动换路，结果如实报告、改系统随时可回滚。"
@@ -292,7 +292,7 @@ githubfast.com · hub.yzuu.cf · github.hscsec.cn · hub.nuaa.cf · hub.gitfast.
 | 排障：只走某条通道 | `get` / `git` 加 `--force direct|pin|mirror|cdn`（写操作禁 `mirror`） |
 | 策略约束：排除某些通道 | `get` / `git` 加 `--exclude mirror,cdn`（与 `--force` 互斥；如"不要经第三方"） |
 | clone 全链失败、但只要代码 | 看失败报告的 `next` 建议——改取 codeload 归档（zip 快照，无 git 历史） |
-| SSH 门开没开（零凭证） | `python scripts/gh.py ssh --status`（探测 github.com:22 与 ssh.github.com:443） |
+| SSH 门开没开（零凭证，含极端慢门场景） | `python scripts/gh.py ssh --status`（探测 github.com:22 与 ssh.github.com:443；每端点探测总预算 180s） |
 | git 走我自己的代理 | `get` / `git` 加 `--proxy http://127.0.0.1:7890`（仅无认证地址；优先级最高、不走链） |
 | git 改走 SSH 传输（本次调用） | `git` 加 `--transport ssh`（需你已配置 key；调用级改写，不碰 remote） |
 | 声明偏好：以后 git 优先走 SSH | `git` 加 `--prefer-ssh`（门可达即优先；门未开自动按链走并注明） |
@@ -341,7 +341,7 @@ python scripts/gh.py update --check | --apply --yes | --rollback   # 更新层�
 | offer | 出现场景 | 探活前置 | 前提标注 |
 | --- | --- | --- | --- |
 | `proxy` | **自动链失败** + 环境检测到代理变量 | 用该代理实测取数（≤5s），通才出现，附实测延迟 | 走你的自有出口 |
-| `ssh` | **仅 git 语境**失败（raw/浏览器不走 SSH） | 双门探测（22 / ssh.github.com:443），至少一门通 | 需你已配置 SSH key（凭证归你，本技能零接触） |
+| `ssh` | **仅 git 语境**失败（raw/浏览器不走 SSH） | 双门探测（22 / ssh.github.com:443），至少一门通（10s 快筛） | 需你已配置 SSH key（凭证归你，本技能零接触） |
 
 规则：环境检测到代理 ≠ 自动使用（环境状态 ≠ 用户意愿）；每一次传输选择都可追溯到一次
 用户决定（重跑显式命令）；失败不静默回退——重新给选项，由用户再决定。
